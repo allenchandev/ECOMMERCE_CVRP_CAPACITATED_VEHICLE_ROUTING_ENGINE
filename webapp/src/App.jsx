@@ -6,11 +6,9 @@ import {
   Clock,
   Play,
   RotateCcw,
-  CheckCircle2,
   Navigation,
-  Layers,
-  Sparkles,
-  Info
+  CheckCircle,
+  Plus
 } from 'lucide-react';
 import InteractiveMap from './components/InteractiveMap';
 import {
@@ -33,7 +31,7 @@ export default function App() {
   const [newWeight, setNewWeight] = useState('');
   const [newDestId, setNewDestId] = useState('ZONE-B');
 
-  // Compute solution directly
+  // Compute solution
   const [dispatchResult, setDispatchResult] = useState(() =>
     solveCVRP('HUB-01', INITIAL_ORDERS, INITIAL_DRIVERS, INITIAL_LOCATIONS, INITIAL_ROADS)
   );
@@ -74,62 +72,63 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Header bar */}
+      {/* Clean Black & White Header */}
       <header className="app-header">
         <div className="brand-section">
           <div className="brand-icon">
-            <Truck color="#ffffff" size={24} />
+            <Truck size={22} />
           </div>
           <div>
-            <h1 className="brand-title">Smart Delivery Routing Engine</h1>
-            <div className="brand-subtitle">Bangalore Hub CVRP & Dijkstra Route Optimizer</div>
+            <h1 className="brand-title">E-Commerce Delivery Routing Engine</h1>
+            <div className="brand-subtitle">Bangalore Hub CVRP & Shortest Path Optimizer</div>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button className="btn-secondary" onClick={handleReset}>
-            <RotateCcw size={15} /> Reset Demo
+            <RotateCcw size={14} /> Reset
           </button>
           <button className="btn-primary" onClick={handleRecalculate}>
-            <Play size={16} fill="currentColor" /> Recalculate Routes
+            <Play size={14} fill="currentColor" /> Recalculate Routes
           </button>
         </div>
       </header>
 
       {/* Main Grid */}
       <div className="dashboard-grid">
-        {/* Left Column: Orders & Fleet Management */}
+        {/* Left Column: Orders */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Quick Metrics */}
-          <div className="glass-panel">
+          <div className="clean-panel">
             <div className="panel-title-bar">
               <span className="panel-title">
-                <PackageIcon size={18} color="#38bdf8" /> Customer Orders
+                <PackageIcon size={16} /> Customer Orders
               </span>
-              <span className="badge badge-blue">{orders.length} Orders</span>
+              <span className="badge badge-black">{orders.length} Total</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.85rem', fontSize: '0.85rem', color: '#94a3b8' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.85rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               <span>Total Cargo Weight:</span>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{totalOrdersWeight.toFixed(1)} kg</strong>
+              <strong style={{ color: '#0f172a' }}>{totalOrdersWeight.toFixed(1)} kg</strong>
             </div>
 
-            <div className="scroll-list" style={{ maxHeight: '310px' }}>
+            <div className="scroll-list" style={{ maxHeight: '320px' }}>
               {orders.map((ord) => {
                 const dest = locations.find(l => l.id === ord.destinationId);
                 return (
                   <div key={ord.id} className="order-item-card">
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#fff' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#0f172a' }}>
                         {ord.customerName}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                        <MapPin size={12} color="#38bdf8" /> {dest?.name || ord.destinationId}
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                        <MapPin size={12} /> {dest?.name || ord.destinationId}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <span className="badge badge-amber">{ord.weight} kg</span>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '3px', fontFamily: 'var(--font-mono)' }}>
+                      <span className="badge badge-light" style={{ fontWeight: 700 }}>
+                        {ord.weight} kg
+                      </span>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '3px', fontFamily: 'var(--font-mono)' }}>
                         {ord.id}
                       </div>
                     </div>
@@ -138,10 +137,10 @@ export default function App() {
               })}
             </div>
 
-            {/* Quick Add Form */}
-            <form onSubmit={handleAddOrder} style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.5rem' }}>
-                + Add New Package
+            {/* Simple Add Order Form */}
+            <form onSubmit={handleAddOrder} style={{ marginTop: '1rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.5rem' }}>
+                Add New Order
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <input
@@ -151,12 +150,12 @@ export default function App() {
                   onChange={(e) => setNewCustName(e.target.value)}
                   style={{
                     flex: 2,
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
                     padding: '0.45rem 0.65rem',
-                    color: '#fff',
-                    fontSize: '0.8rem'
+                    color: '#0f172a',
+                    fontSize: '0.82rem'
                   }}
                 />
                 <input
@@ -167,12 +166,12 @@ export default function App() {
                   onChange={(e) => setNewWeight(e.target.value)}
                   style={{
                     flex: 1,
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
                     padding: '0.45rem 0.65rem',
-                    color: '#fff',
-                    fontSize: '0.8rem'
+                    color: '#0f172a',
+                    fontSize: '0.82rem'
                   }}
                 />
               </div>
@@ -182,68 +181,65 @@ export default function App() {
                   onChange={(e) => setNewDestId(e.target.value)}
                   style={{
                     flex: 2,
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
                     padding: '0.45rem 0.65rem',
-                    color: '#fff',
-                    fontSize: '0.8rem'
+                    color: '#0f172a',
+                    fontSize: '0.82rem'
                   }}
                 >
                   {locations.filter(l => !l.isHub).map(l => (
                     <option key={l.id} value={l.id}>{l.name} ({l.id})</option>
                   ))}
                 </select>
-                <button type="submit" className="btn-primary" style={{ flex: 1, padding: '0.45rem 0.65rem', fontSize: '0.78rem' }}>
-                  Add
+                <button type="submit" className="btn-primary" style={{ flex: 1, padding: '0.45rem 0.65rem', fontSize: '0.82rem' }}>
+                  <Plus size={14} /> Add
                 </button>
               </div>
             </form>
           </div>
         </div>
 
-        {/* Center Column: Interactive Map & Live KPIs */}
+        {/* Center Column: Map & High-Level KPIs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Top KPI row */}
           <div className="metrics-row">
             <div className="metric-card">
-              <span className="metric-label">Warehouse Starting Point</span>
-              <span className="metric-value" style={{ fontSize: '1.1rem', color: '#f87171' }}>Central Hub (HUB-01)</span>
+              <span className="metric-label">Warehouse</span>
+              <span className="metric-value" style={{ fontSize: '1.1rem' }}>Central Hub (HUB-01)</span>
             </div>
             <div className="metric-card">
-              <span className="metric-label">Assigned Delivery Drivers</span>
-              <span className="metric-value" style={{ color: '#38bdf8' }}>
+              <span className="metric-label">Assigned Drivers</span>
+              <span className="metric-value">
                 {dispatchResult.activeDriversCount || 0} / {drivers.length}
               </span>
             </div>
             <div className="metric-card">
-              <span className="metric-label">Total Fleet Drive Time</span>
-              <span className="metric-value" style={{ color: '#34d399' }}>
+              <span className="metric-label">Total Drive Time</span>
+              <span className="metric-value">
                 {dispatchResult.totalFleetDurationMins?.toFixed(0) || 0} mins
               </span>
             </div>
             <div className="metric-card">
-              <span className="metric-label">Total Trip Duration</span>
-              <span className="metric-value" style={{ color: '#fbbf24' }}>
+              <span className="metric-label">Total Trip Hours</span>
+              <span className="metric-value">
                 {((dispatchResult.totalFleetDurationMins || 0) / 60).toFixed(1)} hrs
               </span>
             </div>
           </div>
 
-          {/* Interactive Map Visualizer */}
-          <div className="glass-panel" style={{ padding: '1rem' }}>
+          {/* Interactive Map */}
+          <div className="clean-panel" style={{ padding: '1rem' }}>
             <div className="panel-title-bar" style={{ marginBottom: '0.75rem' }}>
               <span className="panel-title">
-                <Navigation size={18} color="#38bdf8" /> Live Road Map & Optimized Routes
+                <Navigation size={16} /> Live Road Map
               </span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className={`btn-secondary ${selectedPlanId === null ? 'active' : ''}`}
-                  onClick={() => setSelectedPlanId(null)}
-                >
-                  Show All Routes
-                </button>
-              </div>
+              <button
+                className={`btn-secondary ${selectedPlanId === null ? 'active' : ''}`}
+                onClick={() => setSelectedPlanId(null)}
+              >
+                Show All Routes
+              </button>
             </div>
 
             <InteractiveMap
@@ -255,18 +251,18 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Column: Driver Route Plans (Simple English) */}
+        {/* Right Column: Driver Route Schedules */}
         <div className="plans-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div className="glass-panel" style={{ height: '100%' }}>
+          <div className="clean-panel">
             <div className="panel-title-bar">
               <span className="panel-title">
-                <Sparkles size={18} color="#f59e0b" /> Driver Delivery Schedules
+                <Truck size={16} /> Driver Delivery Schedules
               </span>
-              <span className="badge badge-green">Ready to Dispatch</span>
+              <span className="badge badge-light">3 Active</span>
             </div>
 
             {dispatchResult.error ? (
-              <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: 8, color: '#fca5a5' }}>
+              <div style={{ padding: '1rem', background: '#fef2f2', border: '1px solid #f87171', borderRadius: 6, color: '#991b1b' }}>
                 {dispatchResult.error}
               </div>
             ) : (
@@ -279,51 +275,43 @@ export default function App() {
                   return (
                     <div
                       key={driver.id}
-                      className="driver-card"
-                      style={{
-                        borderColor: isSelected ? driver.color : undefined,
-                        boxShadow: isSelected ? `0 0 16px ${driver.color}40` : undefined,
-                        cursor: 'pointer'
-                      }}
+                      className={`driver-card ${isSelected ? 'selected' : ''}`}
                       onClick={() => setSelectedPlanId(isSelected ? null : driver.id)}
+                      style={{ cursor: 'pointer' }}
                     >
                       <div className="driver-header">
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.98rem', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: driver.color }}></span>
+                          <div style={{ fontWeight: 800, fontSize: '0.98rem', color: '#0f172a' }}>
                             Driver #{plan.routeNumber}: {driver.name}
                           </div>
-                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 2 }}>
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 2 }}>
                             {driver.vehicle} • ID: {driver.id}
                           </div>
                         </div>
-                        <span className="badge badge-blue">
-                          <Clock size={12} /> {plan.totalDurationMins.toFixed(0)} mins trip
+                        <span className="badge badge-light">
+                          <Clock size={12} /> {plan.totalDurationMins.toFixed(0)} mins
                         </span>
                       </div>
 
-                      {/* Capacity progress bar */}
+                      {/* Weight progress bar */}
                       <div style={{ marginTop: '0.65rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#475569' }}>
                           <span>Weight Loaded:</span>
-                          <span style={{ color: '#fff', fontWeight: 600 }}>
+                          <span style={{ color: '#0f172a', fontWeight: 700 }}>
                             {driver.currentLoad.toFixed(1)} / {driver.maxCapacity.toFixed(1)} kg ({percentUsed}%)
                           </span>
                         </div>
                         <div className="progress-bar-bg">
                           <div
                             className="progress-bar-fill"
-                            style={{
-                              width: `${percentUsed}%`,
-                              backgroundColor: driver.color || '#3b82f6'
-                            }}
+                            style={{ width: `${percentUsed}%` }}
                           />
                         </div>
                       </div>
 
-                      {/* Delivery Stops in Simple English */}
+                      {/* Plain-English Order of Deliveries */}
                       <div style={{ marginTop: '0.85rem' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.35rem' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.35rem' }}>
                           Order of Deliveries:
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -333,10 +321,11 @@ export default function App() {
                               <div
                                 key={pkg.id}
                                 style={{
-                                  background: 'rgba(0, 0, 0, 0.25)',
-                                  padding: '0.4rem 0.6rem',
+                                  background: '#f8fafc',
+                                  border: '1px solid #e2e8f0',
+                                  padding: '0.45rem 0.6rem',
                                   borderRadius: '6px',
-                                  fontSize: '0.75rem',
+                                  fontSize: '0.78rem',
                                   display: 'flex',
                                   justifyContent: 'space-between',
                                   alignItems: 'center'
@@ -345,7 +334,7 @@ export default function App() {
                                 <span>
                                   <strong>Step {sIdx + 1}:</strong> Deliver to {dest?.name}
                                 </span>
-                                <span style={{ color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontWeight: 700, color: '#0f172a' }}>
                                   {pkg.weight} kg
                                 </span>
                               </div>
@@ -354,12 +343,12 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* GPS Driving Path */}
-                      <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '2px' }}>
+                      {/* GPS Driving Directions */}
+                      <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '2px', fontWeight: 600 }}>
                           GPS Driving Directions:
                         </div>
-                        <div style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>
+                        <div style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: '#0f172a', fontWeight: 600 }}>
                           {plan.waypoints.join(' ➔ ')}
                         </div>
                       </div>
