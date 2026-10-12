@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 
-export default function InteractiveMap({ locations, roads, plans, selectedPlanId }) {
+export default function InteractiveMap({ hubs, zones, roads, hubPlans, selectedHubId }) {
   const [hoveredNode, setHoveredNode] = useState(null);
 
-  const width = 900;
-  const height = 550;
+  const width = 940;
+  const height = 620;
+  const allLocations = [...hubs, ...zones];
+
+  // Active routes to display
+  const activeRoutes = selectedHubId
+    ? (hubPlans.find(hp => hp.hub.id === selectedHubId)?.routes || [])
+    : hubPlans.flatMap(hp => hp.routes);
 
   return (
     <div className="map-canvas-container">
@@ -17,10 +23,10 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
 
         <rect width={width} height={height} fill="url(#light-grid)" />
 
-        {/* Base Roads */}
+        {/* Base Road Connections */}
         {roads.map((road, idx) => {
-          const fromLoc = locations.find(l => l.id === road.from);
-          const toLoc = locations.find(l => l.id === road.to);
+          const fromLoc = allLocations.find(l => l.id === road.from);
+          const toLoc = allLocations.find(l => l.id === road.to);
           if (!fromLoc || !toLoc) return null;
 
           return (
@@ -36,16 +42,16 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
               />
               <rect
                 x={(fromLoc.x + toLoc.x) / 2 - 14}
-                y={(fromLoc.y + toLoc.y) / 2 - 10}
+                y={(fromLoc.y + toLoc.y) / 2 - 9}
                 width="28"
-                height="16"
+                height="17"
                 fill="#ffffff"
-                stroke="#e2e8f0"
+                stroke="#cbd5e1"
                 rx="4"
               />
               <text
                 x={(fromLoc.x + toLoc.x) / 2}
-                y={(fromLoc.y + toLoc.y) / 2 + 2}
+                y={(fromLoc.y + toLoc.y) / 2 + 3}
                 fill="#64748b"
                 fontSize="10"
                 fontWeight="700"
@@ -58,36 +64,36 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
           );
         })}
 
-        {/* Highlighted Routes for each driver */}
-        {plans?.map((plan) => {
-          const isSelected = !selectedPlanId || selectedPlanId === plan.driver.id;
-          const strokeWidth = selectedPlanId === plan.driver.id ? "4.5" : "3";
-          const strokeDash = plan.routeNumber === 2 ? "6 4" : (plan.routeNumber === 3 ? "10 5" : "none");
-
-          const points = plan.waypoints.map(wpId => {
-            const loc = locations.find(l => l.id === wpId);
+        {/* Highlighted Driver Routes */}
+        {activeRoutes.map((route, rIdx) => {
+          const points = route.waypoints.map(wpId => {
+            const loc = allLocations.find(l => l.id === wpId);
             return loc ? `${loc.x},${loc.y}` : '';
           }).filter(Boolean).join(' ');
 
+          const strokeDash = rIdx % 2 === 1 ? "8 4" : "none";
+
           return (
-            <g key={`route-${plan.driver.id}`} opacity={isSelected ? 1 : 0.12}>
+            <g key={`route-${route.driver.id}`}>
               <polyline
                 points={points}
                 fill="none"
                 stroke="#0f172a"
-                strokeWidth={strokeWidth}
+                strokeWidth="3.5"
                 strokeDasharray={strokeDash}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                opacity="0.85"
               />
             </g>
           );
         })}
 
-        {/* Nodes / Locations */}
-        {locations.map((loc) => {
+        {/* Render Locations (Hubs vs Drop-off Zones) */}
+        {allLocations.map((loc) => {
           const isHub = loc.isHub;
           const isHovered = hoveredNode === loc.id;
+          const isSelectedHub = selectedHubId === loc.id;
 
           return (
             <g
@@ -97,9 +103,10 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
               onMouseLeave={() => setHoveredNode(null)}
               style={{ cursor: 'pointer' }}
             >
+              {/* Outer pulsing ring for Hubs */}
               {isHub && (
                 <circle
-                  r="24"
+                  r={isSelectedHub ? "26" : "22"}
                   fill="none"
                   stroke="#0f172a"
                   strokeWidth="1.5"
@@ -107,26 +114,28 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
                 />
               )}
 
+              {/* Node Circle */}
               <circle
-                r={isHub ? 14 : 10}
+                r={isHub ? 15 : 10}
                 fill={isHub ? "#0f172a" : (isHovered ? "#0f172a" : "#ffffff")}
                 stroke="#0f172a"
                 strokeWidth="2.5"
               />
 
+              {/* Label */}
               <text
                 y={isHub ? -20 : -16}
                 textAnchor="middle"
                 fill="#0f172a"
                 fontSize={isHub ? 12 : 11}
-                fontWeight="700"
+                fontWeight="800"
                 fontFamily="var(--font-sans)"
               >
-                {loc.name}
+                {isHub ? `🏢 ${loc.name}` : loc.name}
               </text>
 
               <text
-                y={isHub ? 26 : 22}
+                y={isHub ? 28 : 22}
                 textAnchor="middle"
                 fill="#64748b"
                 fontSize="10"
@@ -140,6 +149,7 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
         })}
       </svg>
 
+      {/* Clean Legend */}
       <div style={{
         position: 'absolute',
         bottom: 12,
@@ -155,8 +165,8 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
         fontWeight: 600
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#0f172a', display: 'inline-block' }}></span>
-          Warehouse Hub
+          <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#0f172a', display: 'inline-block' }}></span>
+          Fulfillment Hub (3 Total)
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffffff', border: '2px solid #0f172a', display: 'inline-block' }}></span>
