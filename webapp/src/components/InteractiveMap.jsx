@@ -3,32 +3,23 @@ import React, { useState } from 'react';
 export default function InteractiveMap({ locations, roads, plans, selectedPlanId }) {
   const [hoveredNode, setHoveredNode] = useState(null);
 
-  // Map coordinate bounds
   const width = 850;
   const height = 620;
-
-  // Active plan waypoint edges
-  const activePlan = plans?.find(p => p.driver.id === selectedPlanId);
 
   return (
     <div className="map-canvas-container">
       <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
         <defs>
-          {/* Subtle grid pattern */}
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255, 255, 255, 0.03)" strokeWidth="1" />
+          {/* Subtle light grid */}
+          <pattern id="light-grid" width="30" height="30" patternUnits="userSpaceOnUse">
+            <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#f1f5f9" strokeWidth="1" />
           </pattern>
-          {/* Glow filter */}
-          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
         </defs>
 
         {/* Background Grid */}
-        <rect width={width} height={height} fill="url(#grid)" />
+        <rect width={width} height={height} fill="url(#light-grid)" />
 
-        {/* Render base road network */}
+        {/* Render base roads */}
         {roads.map((road, idx) => {
           const fromLoc = locations.find(l => l.id === road.from);
           const toLoc = locations.find(l => l.id === road.to);
@@ -41,16 +32,16 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
                 y1={fromLoc.y}
                 x2={toLoc.x}
                 y2={toLoc.y}
-                stroke="rgba(255, 255, 255, 0.12)"
-                strokeWidth="3"
+                stroke="#cbd5e1"
+                strokeWidth="2.5"
                 strokeDasharray="4 4"
               />
-              {/* Road time badge */}
               <text
                 x={(fromLoc.x + toLoc.x) / 2}
-                y={(fromLoc.y + toLoc.y) / 2 - 6}
+                y={(fromLoc.y + toLoc.y) / 2 - 5}
                 fill="#64748b"
-                fontSize="10"
+                fontSize="11"
+                fontWeight="600"
                 fontFamily="var(--font-mono)"
                 textAnchor="middle"
               >
@@ -60,10 +51,14 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
           );
         })}
 
-        {/* Highlight routes for each active plan */}
+        {/* Highlight routes */}
         {plans?.map((plan) => {
           const isSelected = !selectedPlanId || selectedPlanId === plan.driver.id;
-          const color = plan.driver.color || '#3b82f6';
+          
+          // Clear, distinct stroke styles for white background
+          const strokeColor = "#0f172a";
+          const strokeWidth = selectedPlanId === plan.driver.id ? "4.5" : "3";
+          const strokeDash = plan.routeNumber === 2 ? "6 4" : (plan.routeNumber === 3 ? "10 5" : "none");
 
           const points = plan.waypoints.map(wpId => {
             const loc = locations.find(l => l.id === wpId);
@@ -71,21 +66,21 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
           }).filter(Boolean).join(' ');
 
           return (
-            <g key={`route-${plan.driver.id}`} opacity={isSelected ? 1 : 0.2}>
+            <g key={`route-${plan.driver.id}`} opacity={isSelected ? 1 : 0.15}>
               <polyline
                 points={points}
                 fill="none"
-                stroke={color}
-                strokeWidth={isSelected && selectedPlanId === plan.driver.id ? "5" : "3.5"}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeDasharray={strokeDash}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                filter="url(#glow)"
               />
             </g>
           );
         })}
 
-        {/* Render City Locations / Nodes */}
+        {/* Render Locations */}
         {locations.map((loc) => {
           const isHub = loc.isHub;
           const isHovered = hoveredNode === loc.id;
@@ -98,50 +93,43 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
               onMouseLeave={() => setHoveredNode(null)}
               style={{ cursor: 'pointer' }}
             >
-              {/* Outer pulsing ring for Hub */}
+              {/* Warehouse indicator */}
               {isHub && (
                 <circle
-                  r="24"
+                  r="22"
                   fill="none"
-                  stroke="rgba(239, 68, 68, 0.4)"
-                  strokeWidth="2"
-                >
-                  <animate attributeName="r" values="18;28;18" dur="3s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.8;0.1;0.8" dur="3s" repeatCount="indefinite" />
-                </circle>
+                  stroke="#0f172a"
+                  strokeWidth="1.5"
+                  strokeDasharray="3 3"
+                />
               )}
 
-              {/* Node background circle */}
+              {/* Node Circle */}
               <circle
-                r={isHub ? 16 : 12}
-                fill={isHub ? '#ef4444' : '#1e293b'}
-                stroke={isHovered ? '#38bdf8' : (isHub ? '#fca5a5' : '#475569')}
-                strokeWidth={isHovered ? 3 : 2}
-                filter="url(#glow)"
+                r={isHub ? 14 : 10}
+                fill={isHub ? "#0f172a" : (isHovered ? "#0f172a" : "#ffffff")}
+                stroke="#0f172a"
+                strokeWidth="2.5"
               />
 
-              {/* Inner dot */}
-              {!isHub && (
-                <circle r="4" fill="#38bdf8" />
-              )}
-
-              {/* Node Label */}
+              {/* Label */}
               <text
-                y={isHub ? -22 : -18}
+                y={isHub ? -20 : -16}
                 textAnchor="middle"
-                fill={isHub ? '#fca5a5' : '#f1f5f9'}
+                fill="#0f172a"
                 fontSize={isHub ? 12 : 11}
-                fontWeight={isHub ? '700' : '600'}
+                fontWeight="700"
                 fontFamily="var(--font-sans)"
               >
                 {loc.name}
               </text>
 
               <text
-                y={isHub ? 30 : 25}
+                y={isHub ? 26 : 22}
                 textAnchor="middle"
-                fill="#94a3b8"
-                fontSize="9"
+                fill="#64748b"
+                fontSize="10"
+                fontWeight="500"
                 fontFamily="var(--font-mono)"
               >
                 {loc.id} ({loc.pincode})
@@ -151,28 +139,28 @@ export default function InteractiveMap({ locations, roads, plans, selectedPlanId
         })}
       </svg>
 
-      {/* Floating map legend */}
+      {/* Clean Legend */}
       <div style={{
         position: 'absolute',
         bottom: 12,
         right: 12,
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: 8,
-        padding: '8px 12px',
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 6,
+        padding: '6px 12px',
         display: 'flex',
-        gap: 12,
-        fontSize: '0.75rem',
-        color: '#94a3b8'
+        gap: 14,
+        fontSize: '0.78rem',
+        color: '#475569',
+        fontWeight: 500
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }}></span>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#0f172a', display: 'inline-block' }}></span>
           Warehouse Hub
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#38bdf8', display: 'inline-block' }}></span>
-          Customer Delivery Zone
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffffff', border: '2px solid #0f172a', display: 'inline-block' }}></span>
+          Delivery Zone
         </div>
       </div>
     </div>
