@@ -12,7 +12,7 @@ import java.util.*;
 public class Main {
     public static void main(String[] args) {
         System.out.println("================================================================================");
-        System.out.println("       E-COMMERCE CVRP CAPACITATED VEHICLE ROUTING ENGINE (OOP)                 ");
+        System.out.println("                 SMART E-COMMERCE DELIVERY ROUTE FINDER                         ");
         System.out.println("================================================================================");
 
         // 1. Define City Locations
@@ -36,7 +36,7 @@ public class Main {
         cityGraph.addRoad(locC, locF, 20.0);
         cityGraph.addRoad(locD, locE, 35.0);
 
-        System.out.println("\n[Graph Initialized] Total Nodes: " + cityGraph.getAllLocations().size());
+        System.out.println("\n[City Map Loaded] Total Locations: " + cityGraph.getAllLocations().size());
         for (Location loc : cityGraph.getAllLocations()) {
             System.out.printf("  • %-32s -> %d connected roads\n", loc.toString(), cityGraph.getNeighbors(loc).size());
         }
@@ -60,9 +60,9 @@ public class Main {
         ));
 
         double totalPayloadWeight = incomingOrders.stream().mapToDouble(Package::weight).sum();
-        System.out.printf("\n[Incoming Orders] Total Orders: %d | Total Weight: %.1f kg\n", incomingOrders.size(), totalPayloadWeight);
+        System.out.printf("\n[New Customer Orders] Orders to deliver: %d | Total Package Weight: %.1f kg\n", incomingOrders.size(), totalPayloadWeight);
         for (Package p : incomingOrders) {
-            System.out.printf("  • %-10s to %-30s | Weight: %4.1f kg | Customer: %s\n",
+            System.out.printf("  • Order %-8s -> Deliver to: %-26s | Weight: %4.1f kg | Customer: %s\n",
                 p.orderId(), p.destination().name(), p.weight(), p.customerName());
         }
 
@@ -72,30 +72,30 @@ public class Main {
 
         // 6. Display Dispatch Summary
         System.out.println("\n================================================================================");
-        System.out.println("                      OPTIMIZED FLEET ROUTE DISPATCH                           ");
+        System.out.println("                       FINAL DELIVERY PLAN FOR DRIVERS                         ");
         System.out.println("================================================================================");
-        System.out.printf("Hub Location        : %s\n", summary.hub());
+        System.out.printf("Starting Warehouse  : %s\n", summary.hub());
         System.out.printf("Total Packages      : %d\n", summary.totalOrdersCount());
-        System.out.printf("Active Fleet Units  : %d / %d\n", summary.activeVehiclesCount(), summary.totalFleetSize());
-        System.out.printf("Cumulative Fleet ETA: %.1f mins (%.2f hours)\n\n",
+        System.out.printf("Drivers Assigned    : %d out of %d drivers available\n", summary.activeVehiclesCount(), summary.totalFleetSize());
+        System.out.printf("Total Fleet Drive Time: %.1f minutes (about %.1f hours)\n\n",
             summary.totalFleetDurationMins(), summary.totalFleetDurationMins() / 60.0);
 
         int routeIndex = 1;
         for (AgentRoutePlan plan : summary.activePlans()) {
             DeliveryAgent agent = plan.agent();
-            System.out.printf(">>> [ROUTE #%d] %s (%s)\n", routeIndex++, agent.getDriverName(), agent.getAgentId());
-            System.out.printf("    Capacity Utilized: %.1f / %.1f kg (%.1f%%)\n",
+            System.out.printf(">>> [DRIVER #%d] %s (Vehicle ID: %s)\n", routeIndex++, agent.getDriverName(), agent.getAgentId());
+            System.out.printf("    Vehicle Weight Limit : %.1f kg used of %.1f kg max (%.1f%% full)\n",
                 agent.getCurrentLoad(), agent.getMaxCapacity(), (agent.getCurrentLoad() / agent.getMaxCapacity()) * 100.0);
-            System.out.printf("    Estimated Trip Time: %.1f minutes\n", plan.totalDurationMins());
-            System.out.println("    Drop-Off Sequence:");
+            System.out.printf("    Total Trip Time      : %.1f minutes (including return trip)\n", plan.totalDurationMins());
+            System.out.println("    Order of Deliveries  :");
 
             int stop = 1;
             for (Package pkg : plan.stopSequence()) {
-                System.out.printf("      Stop %d: %-10s -> %-28s [%.1f kg] (Cust: %s)\n",
+                System.out.printf("      Step %d: Deliver Order %-7s to %-26s (Weight: %.1f kg, Customer: %s)\n",
                     stop++, pkg.orderId(), pkg.destination().name(), pkg.weight(), pkg.customerName());
             }
 
-            System.out.print("    Turn-By-Turn Path: ");
+            System.out.print("    GPS Driving Path     : ");
             for (int i = 0; i < plan.detailedTurnByTurnWaypoints().size(); i++) {
                 Location wp = plan.detailedTurnByTurnWaypoints().get(i);
                 System.out.print(wp.id());
@@ -106,6 +106,6 @@ public class Main {
             System.out.println("\n" + "-".repeat(80));
         }
 
-        System.out.println("Dispatch plan generated successfully.\n");
+        System.out.println("All packages have been successfully assigned and routes are ready!\n");
     }
 }
