@@ -7,41 +7,43 @@ import {
   ArrowRight,
   ArrowLeft,
   RotateCcw,
-  CheckCircle2,
-  Navigation,
+  Building2,
   Plus,
   Play,
-  FileCheck
+  CheckCircle2,
+  Layers
 } from 'lucide-react';
 import InteractiveMap from './components/InteractiveMap';
 import {
-  INITIAL_LOCATIONS,
+  INITIAL_HUBS,
+  INITIAL_ZONES,
   INITIAL_ROADS,
   INITIAL_DRIVERS,
   INITIAL_ORDERS,
-  solveCVRP
+  solveMultiHubCVRP
 } from './cvrpEngine';
 
 export default function App() {
   const [currentStep, setCurrentStep] = useState(1);
-  const [locations] = useState(INITIAL_LOCATIONS);
+  const [hubs] = useState(INITIAL_HUBS);
+  const [zones] = useState(INITIAL_ZONES);
   const [roads] = useState(INITIAL_ROADS);
-  const [drivers, setDrivers] = useState(INITIAL_DRIVERS);
+  const [drivers] = useState(INITIAL_DRIVERS);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
-  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  const [selectedHubId, setSelectedHubId] = useState(null);
 
   // New order form
   const [newCustName, setNewCustName] = useState('');
   const [newWeight, setNewWeight] = useState('');
-  const [newDestId, setNewDestId] = useState('ZONE-B');
+  const [newDestId, setNewDestId] = useState('ZONE-D');
 
   // Solution computation
   const [dispatchResult, setDispatchResult] = useState(() =>
-    solveCVRP('HUB-01', INITIAL_ORDERS, INITIAL_DRIVERS, INITIAL_LOCATIONS, INITIAL_ROADS)
+    solveMultiHubCVRP(INITIAL_HUBS, INITIAL_ZONES, INITIAL_ROADS, INITIAL_ORDERS, INITIAL_DRIVERS)
   );
 
   const handleRecalculate = () => {
-    const result = solveCVRP('HUB-01', orders, drivers, locations, roads);
+    const result = solveMultiHubCVRP(hubs, zones, roads, orders, drivers);
     setDispatchResult(result);
   };
 
@@ -59,25 +61,24 @@ export default function App() {
 
     const updated = [...orders, newOrder];
     setOrders(updated);
-    setDispatchResult(solveCVRP('HUB-01', updated, drivers, locations, roads));
+    setDispatchResult(solveMultiHubCVRP(hubs, zones, roads, updated, drivers));
     setNewCustName('');
     setNewWeight('');
   };
 
   const handleReset = () => {
     setOrders(INITIAL_ORDERS);
-    setDrivers(INITIAL_DRIVERS);
-    setSelectedPlanId(null);
-    setDispatchResult(solveCVRP('HUB-01', INITIAL_ORDERS, INITIAL_DRIVERS, INITIAL_LOCATIONS, INITIAL_ROADS));
+    setSelectedHubId(null);
+    setDispatchResult(solveMultiHubCVRP(INITIAL_HUBS, INITIAL_ZONES, INITIAL_ROADS, INITIAL_ORDERS, INITIAL_DRIVERS));
   };
 
   const totalOrdersWeight = orders.reduce((sum, o) => sum + o.weight, 0);
 
   const steps = [
-    { num: 1, title: 'Step 1: Customer Orders', desc: 'Incoming packages & destination' },
-    { num: 2, title: 'Step 2: City Map & Roads', desc: 'Distances & travel times' },
-    { num: 3, title: 'Step 3: Route Optimization', desc: 'Dijkstra & Capacity Allocation' },
-    { num: 4, title: 'Step 4: Driver Schedules', desc: 'Turn-by-turn dispatch plan' }
+    { num: 1, title: 'Step 1: Network Hubs & Orders', desc: '3 Hubs + Incoming Packages' },
+    { num: 2, title: 'Step 2: Nearest Hub Allocation', desc: 'Orders assigned to closest hub' },
+    { num: 3, title: 'Step 3: Multi-Hub Route Map', desc: 'Dijkstra shortest paths' },
+    { num: 4, title: 'Step 4: Driver Schedules by Hub', desc: 'Vehicle capacity & itineraries' }
   ];
 
   return (
@@ -86,11 +87,11 @@ export default function App() {
       <header className="app-header">
         <div className="brand-section">
           <div className="brand-icon">
-            <Truck size={24} />
+            <Building2 size={24} />
           </div>
           <div>
-            <h1 className="brand-title">E-Commerce Delivery Routing System</h1>
-            <div className="brand-subtitle">Step-by-Step Delivery Planning & Route Optimization</div>
+            <h1 className="brand-title">Multi-Hub E-Commerce Routing Engine</h1>
+            <div className="brand-subtitle">Bangalore Regional Network • Nearest Hub Allocation & Fleet Optimization</div>
           </div>
         </div>
 
@@ -99,7 +100,7 @@ export default function App() {
         </button>
       </header>
 
-      {/* Stepper Progress Bar */}
+      {/* Stepper Progress Tabs */}
       <div className="stepper-nav">
         {steps.map((s) => (
           <div
@@ -116,48 +117,68 @@ export default function App() {
         ))}
       </div>
 
-      {/* Step Content View */}
+      {/* Main Container */}
       <main className="step-container">
         <div className="step-content-card">
 
-          {/* ================= STEP 1: INCOMING ORDERS ================= */}
+          {/* ================= STEP 1: MULTI-HUBS & ORDERS ================= */}
           {currentStep === 1 && (
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 1: Review Customer Packages to Deliver</h2>
+                  <h2 className="step-heading">Step 1: Delivery Hubs & Incoming Customer Orders</h2>
                   <p className="step-subheading">
-                    Here are all the orders received from customers today, along with their weights and drop-off zones.
+                    We operate 3 regional fulfillment hubs across Bangalore. Incoming customer packages are automatically routed from the closest one.
                   </p>
                 </div>
-                <span className="badge badge-black" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
-                  {orders.length} Orders | Total: {totalOrdersWeight.toFixed(1)} kg
+                <span className="badge badge-black" style={{ padding: '0.4rem 0.8rem' }}>
+                  {hubs.length} Hubs • {orders.length} Orders ({totalOrdersWeight.toFixed(1)} kg)
                 </span>
               </div>
 
-              {/* Order Cards */}
+              {/* 3 Hubs Showcase */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: '0.8rem', textTransform: 'uppercase', color: '#475569' }}>
+                  Active Fulfillment Centers:
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                  {hubs.map(hub => {
+                    const assignedDrivers = drivers.filter(d => d.hubId === hub.id);
+                    return (
+                      <div key={hub.id} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 8, padding: '1rem', borderLeft: '5px solid #0f172a' }}>
+                        <div style={{ fontWeight: 800, fontSize: '1rem' }}>{hub.name}</div>
+                        <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 2 }}>{hub.address} • Pincode: {hub.pincode}</div>
+                        <div style={{ marginTop: '0.65rem', display: 'flex', gap: 6, fontSize: '0.78rem' }}>
+                          <span className="badge badge-light">ID: {hub.id}</span>
+                          <span className="badge badge-black">{assignedDrivers.length} Stationed Drivers</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Orders Grid */}
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: '0.8rem', textTransform: 'uppercase', color: '#475569' }}>
+                Customer Orders Waiting for Dispatch:
+              </h3>
               <div className="orders-table-grid">
                 {orders.map((ord) => {
-                  const dest = locations.find(l => l.id === ord.destinationId);
+                  const dest = zones.find(z => z.id === ord.destinationId);
                   return (
                     <div key={ord.id} className="order-box">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                           <strong style={{ fontSize: '1rem', color: '#0f172a' }}>{ord.customerName}</strong>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>
-                            {ord.id}
-                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>{ord.id}</div>
                         </div>
                         <span style={{ background: '#0f172a', color: '#fff', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: '0.8rem' }}>
                           {ord.weight} kg
                         </span>
                       </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#334155', marginTop: 4 }}>
-                        <MapPin size={14} />
-                        <span><strong>Deliver to:</strong> {dest?.name} ({dest?.id})</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#334155' }}>
+                        <MapPin size={14} /> <span><strong>Deliver to:</strong> {dest?.name} ({dest?.id})</span>
                       </div>
-
                       <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
                         Pincode: {dest?.pincode} • Dimensions: {ord.dimensions}
                       </div>
@@ -166,7 +187,7 @@ export default function App() {
                 })}
               </div>
 
-              {/* Add Package Box */}
+              {/* Add Order form */}
               <div style={{ marginTop: '2rem', padding: '1.25rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 }}>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem' }}>+ Add Another Package</h3>
                 <form onSubmit={handleAddOrder} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -175,7 +196,7 @@ export default function App() {
                     placeholder="Customer Name"
                     value={newCustName}
                     onChange={(e) => setNewCustName(e.target.value)}
-                    style={{ flex: '2', minWidth: 200, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                    style={{ flex: 2, minWidth: 200, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
                   />
                   <input
                     type="number"
@@ -183,15 +204,15 @@ export default function App() {
                     placeholder="Weight (kg)"
                     value={newWeight}
                     onChange={(e) => setNewWeight(e.target.value)}
-                    style={{ flex: '1', minWidth: 120, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                    style={{ flex: 1, minWidth: 120, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
                   />
                   <select
                     value={newDestId}
                     onChange={(e) => setNewDestId(e.target.value)}
-                    style={{ flex: '2', minWidth: 220, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
+                    style={{ flex: 2, minWidth: 220, padding: '0.6rem 0.8rem', border: '1px solid #cbd5e1', borderRadius: 6 }}
                   >
-                    {locations.filter(l => !l.isHub).map(l => (
-                      <option key={l.id} value={l.id}>{l.name} ({l.id})</option>
+                    {zones.map(z => (
+                      <option key={z.id} value={z.id}>{z.name} ({z.id})</option>
                     ))}
                   </select>
                   <button type="submit" className="btn-primary">
@@ -202,207 +223,59 @@ export default function App() {
             </div>
           )}
 
-          {/* ================= STEP 2: CITY MAP & ROADS ================= */}
+          {/* ================= STEP 2: NEAREST HUB ALLOCATION ================= */}
           {currentStep === 2 && (
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 2: City Road Network & Travel Times</h2>
+                  <h2 className="step-heading">Step 2: Nearest Hub Allocation (Dijkstra Shortest Path)</h2>
                   <p className="step-subheading">
-                    The map shows the Central Warehouse Hub and connected zones with estimated travel times in minutes.
-                  </p>
-                </div>
-                <span className="badge badge-black" style={{ padding: '0.4rem 0.8rem' }}>
-                  {locations.length} Locations • {roads.length} Roads
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem' }}>
-                <InteractiveMap
-                  locations={locations}
-                  roads={roads}
-                  plans={[]}
-                  selectedPlanId={null}
-                />
-
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '1rem' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 800, marginBottom: '0.75rem' }}>Direct Road Travel Times</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto' }}>
-                    {roads.map((r, i) => {
-                      const from = locations.find(l => l.id === r.from);
-                      const to = locations.find(l => l.id === r.to);
-                      return (
-                        <div key={i} style={{ padding: '0.5rem 0.75rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{from?.name} ↔ {to?.name}</span>
-                          <strong>{r.time} mins</strong>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= STEP 3: OPTIMIZATION RESULTS ================= */}
-          {currentStep === 3 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Step 3: Route Optimization & Vehicle Allocation</h2>
-                  <p className="step-subheading">
-                    Packages are grouped by vehicle weight limits, and Dijkstra's algorithm finds the shortest delivery route.
+                    The engine computes the shortest road distance from each hub to the customer and assigns the order to the nearest fulfillment center.
                   </p>
                 </div>
                 <button className="btn-primary" onClick={handleRecalculate}>
-                  <Play size={15} fill="currentColor" /> Recalculate Now
+                  <Play size={14} fill="currentColor" /> Re-allocate
                 </button>
               </div>
 
-              {/* Summary Stats Strip */}
-              <div className="summary-strip">
-                <div className="summary-metric">
-                  <div className="summary-metric-label">Warehouse Starting Point</div>
-                  <div className="summary-metric-val" style={{ fontSize: '1.15rem' }}>Central Hub (HUB-01)</div>
-                </div>
-                <div className="summary-metric">
-                  <div className="summary-metric-label">Packages Assigned</div>
-                  <div className="summary-metric-val">{dispatchResult.totalOrdersCount} / {orders.length}</div>
-                </div>
-                <div className="summary-metric">
-                  <div className="summary-metric-label">Active Delivery Drivers</div>
-                  <div className="summary-metric-val">{dispatchResult.activeDriversCount} Drivers</div>
-                </div>
-                <div className="summary-metric">
-                  <div className="summary-metric-label">Combined Fleet Driving Time</div>
-                  <div className="summary-metric-val">
-                    {dispatchResult.totalFleetDurationMins?.toFixed(0)} mins ({((dispatchResult.totalFleetDurationMins || 0) / 60).toFixed(1)} hrs)
-                  </div>
-                </div>
-              </div>
-
-              {/* Optimized Map */}
-              <div style={{ marginTop: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Optimized Delivery Routes on Map:</span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      className={`btn-secondary ${selectedPlanId === null ? 'active' : ''}`}
-                      onClick={() => setSelectedPlanId(null)}
-                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
-                    >
-                      Show All Drivers
-                    </button>
-                    {dispatchResult.plans?.map((p) => (
-                      <button
-                        key={p.driver.id}
-                        className={`btn-secondary ${selectedPlanId === p.driver.id ? 'active' : ''}`}
-                        onClick={() => setSelectedPlanId(p.driver.id)}
-                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
-                      >
-                        Driver #{p.routeNumber}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <InteractiveMap
-                  locations={locations}
-                  roads={roads}
-                  plans={dispatchResult.plans || []}
-                  selectedPlanId={selectedPlanId}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ================= STEP 4: DRIVER DISPATCH SCHEDULES ================= */}
-          {currentStep === 4 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Step 4: Final Driver Delivery Schedules</h2>
-                  <p className="step-subheading">
-                    Clear, turn-by-turn drop-off instructions given to each driver before leaving the warehouse.
-                  </p>
-                </div>
-                <span className="badge badge-black" style={{ padding: '0.4rem 0.8rem' }}>
-                  All 3 Drivers Dispatched
-                </span>
-              </div>
-
-              {/* 3 Driver Columns */}
-              <div className="drivers-grid">
-                {dispatchResult.plans?.map((plan) => {
-                  const driver = plan.driver;
-                  const percentUsed = ((driver.currentLoad / driver.maxCapacity) * 100).toFixed(1);
+              {/* 3 Hub Distribution Breakdown */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
+                {dispatchResult.hubPlans.map(hp => {
+                  const hub = hp.hub;
+                  const totalKg = hp.orders.reduce((sum, o) => sum + o.weight, 0);
 
                   return (
-                    <div key={driver.id} className="driver-detail-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
-                            Driver #{plan.routeNumber}: {driver.name}
-                          </div>
-                          <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 2 }}>
-                            {driver.vehicle} • ID: {driver.id}
-                          </div>
-                        </div>
-                        <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '3px 8px', borderRadius: 4, fontSize: '0.8rem', fontWeight: 700 }}>
-                          {plan.totalDurationMins.toFixed(0)} mins
-                        </span>
+                    <div key={hub.id} style={{ border: '2px solid #0f172a', borderRadius: 10, padding: '1.25rem', background: '#ffffff' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{hub.name}</span>
+                        <span className="badge badge-black">{hp.orders.length} Orders</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 4 }}>
+                        Hub ID: <strong>{hub.id}</strong> • Total Load: <strong>{totalKg.toFixed(1)} kg</strong>
                       </div>
 
-                      {/* Weight Progress Bar */}
-                      <div style={{ margin: '1rem 0' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 4 }}>
-                          <span style={{ color: '#64748b' }}>Cargo Capacity:</span>
-                          <strong>{driver.currentLoad.toFixed(1)} / {driver.maxCapacity.toFixed(1)} kg ({percentUsed}%)</strong>
+                      <div style={{ marginTop: '1rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase' }}>
+                          Assigned Packages (Closest by travel time):
                         </div>
-                        <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ width: `${percentUsed}%`, height: '100%', background: '#0f172a' }} />
-                        </div>
-                      </div>
-
-                      {/* Step by Step Deliveries */}
-                      <div style={{ marginTop: '1.25rem' }}>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#0f172a', marginBottom: '0.5rem' }}>
-                          Drop-Off Order:
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {plan.stopSequence.map((pkg, idx) => {
-                            const dest = locations.find(l => l.id === pkg.destinationId);
-                            return (
-                              <div
-                                key={pkg.id}
-                                style={{
-                                  background: '#f8fafc',
-                                  border: '1px solid #e2e8f0',
-                                  padding: '0.65rem 0.8rem',
-                                  borderRadius: 6,
-                                  fontSize: '0.82rem'
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <strong>Stop {idx + 1}: {dest?.name}</strong>
-                                  <span style={{ fontWeight: 700 }}>{pkg.weight} kg</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '250px', overflowY: 'auto' }}>
+                          {hp.orders.length === 0 ? (
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>No orders closest to this hub today.</div>
+                          ) : (
+                            hp.orders.map(ord => {
+                              const dest = zones.find(z => z.id === ord.destinationId);
+                              return (
+                                <div key={ord.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.45rem 0.65rem', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+                                  <div>
+                                    <strong>{ord.customerName}</strong> ➔ {dest?.name}
+                                  </div>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {ord.distanceToHubMins.toFixed(0)}m away
+                                  </span>
                                 </div>
-                                <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: 3 }}>
-                                  Customer: {pkg.customerName} ({pkg.id})
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Turn-by-Turn GPS Waypoints */}
-                      <div style={{ marginTop: '1.25rem', paddingTop: '0.75rem', borderTop: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, marginBottom: 4 }}>
-                          GPS Road Directions:
-                        </div>
-                        <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
-                          {plan.waypoints.join(' ➔ ')}
+                              );
+                            })
+                          )}
                         </div>
                       </div>
                     </div>
@@ -412,7 +285,164 @@ export default function App() {
             </div>
           )}
 
-          {/* Bottom Next/Prev Phase Navigation */}
+          {/* ================= STEP 3: MULTI-HUB MAP ================= */}
+          {currentStep === 3 && (
+            <div>
+              <div className="step-header-banner">
+                <div>
+                  <h2 className="step-heading">Step 3: Multi-Hub Route Map & Network Visualization</h2>
+                  <p className="step-subheading">
+                    View Bangalore delivery routes originating independently from each of the 3 fulfillment hubs.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    className={`btn-secondary ${selectedHubId === null ? 'active' : ''}`}
+                    onClick={() => setSelectedHubId(null)}
+                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem' }}
+                  >
+                    All Hubs
+                  </button>
+                  {hubs.map(h => (
+                    <button
+                      key={h.id}
+                      className={`btn-secondary ${selectedHubId === h.id ? 'active' : ''}`}
+                      onClick={() => setSelectedHubId(h.id)}
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem' }}
+                    >
+                      {h.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Map View */}
+              <InteractiveMap
+                hubs={hubs}
+                zones={zones}
+                roads={roads}
+                hubPlans={dispatchResult.hubPlans}
+                selectedHubId={selectedHubId}
+              />
+            </div>
+          )}
+
+          {/* ================= STEP 4: DRIVER SCHEDULES BY HUB ================= */}
+          {currentStep === 4 && (
+            <div>
+              <div className="step-header-banner">
+                <div>
+                  <h2 className="step-heading">Step 4: Final Driver Dispatch Schedules by Hub</h2>
+                  <p className="step-subheading">
+                    Each driver receives an optimized sequence of drop-offs starting and finishing at their home hub.
+                  </p>
+                </div>
+                <span className="badge badge-black" style={{ padding: '0.4rem 0.8rem' }}>
+                  Total Fleet Time: {dispatchResult.totalFleetDurationMins.toFixed(0)} mins
+                </span>
+              </div>
+
+              {/* Driver schedules grouped by hub */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {dispatchResult.hubPlans.map(hp => {
+                  const hub = hp.hub;
+                  if (hp.routes.length === 0) return null;
+
+                  return (
+                    <div key={hub.id}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem', borderBottom: '1px solid #cbd5e1', paddingBottom: '0.5rem' }}>
+                        <Building2 size={20} />
+                        <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>{hub.name} ({hub.id})</h3>
+                        <span className="badge badge-light" style={{ marginLeft: 'auto' }}>
+                          {hp.routes.length} Active Vehicles • {hp.hubDurationMins.toFixed(0)} mins
+                        </span>
+                      </div>
+
+                      <div className="drivers-grid">
+                        {hp.routes.map((route, rIdx) => {
+                          const driver = route.driver;
+                          const percentUsed = ((driver.currentLoad / driver.maxCapacity) * 100).toFixed(1);
+
+                          return (
+                            <div key={driver.id} className="driver-detail-card">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                                    {driver.name}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+                                    {driver.vehicle} • ID: {driver.id}
+                                  </div>
+                                </div>
+                                <span className="badge badge-light" style={{ fontWeight: 700 }}>
+                                  {route.totalDurationMins.toFixed(0)} mins
+                                </span>
+                              </div>
+
+                              {/* Capacity Bar */}
+                              <div style={{ margin: '0.85rem 0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 4 }}>
+                                  <span style={{ color: '#64748b' }}>Capacity:</span>
+                                  <strong>{driver.currentLoad.toFixed(1)} / {driver.maxCapacity.toFixed(1)} kg ({percentUsed}%)</strong>
+                                </div>
+                                <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ width: `${percentUsed}%`, height: '100%', background: '#0f172a' }} />
+                                </div>
+                              </div>
+
+                              {/* Drop off sequence */}
+                              <div style={{ marginTop: '1rem' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: '#0f172a', marginBottom: '0.4rem' }}>
+                                  Drop-Off Order:
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                  {route.stopSequence.map((pkg, sIdx) => {
+                                    const dest = zones.find(z => z.id === pkg.destinationId);
+                                    return (
+                                      <div
+                                        key={pkg.id}
+                                        style={{
+                                          background: '#f8fafc',
+                                          border: '1px solid #e2e8f0',
+                                          padding: '0.5rem 0.7rem',
+                                          borderRadius: 6,
+                                          fontSize: '0.8rem'
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                          <strong>Stop {sIdx + 1}: {dest?.name}</strong>
+                                          <span style={{ fontWeight: 700 }}>{pkg.weight} kg</span>
+                                        </div>
+                                        <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: 2 }}>
+                                          Customer: {pkg.customerName} ({pkg.id})
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Waypoint Directions */}
+                              <div style={{ marginTop: '1rem', paddingTop: '0.65rem', borderTop: '1px solid #e2e8f0' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, marginBottom: 4 }}>
+                                  GPS Road Directions:
+                                </div>
+                                <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
+                                  {route.waypoints.join(' ➔ ')}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stepper Navigation Buttons */}
           <div className="step-nav-footer">
             <button
               className="btn-secondary"
