@@ -75,15 +75,115 @@ export function buildAdjacencyList(allLocations, roads) {
   return adj;
 }
 
-export function dijkstra(sourceId, targetId, adj) {
+// Euclidean heuristic for A* in minutes (distance / avg city speed 40km/h ~ approx scale)
+export function euclideanHeuristic(nodeA, nodeB) {
+  if (!nodeA || !nodeB) return 0;
+  const dx = nodeA.x - nodeB.x;
+  const dy = nodeA.y - nodeB.y;
+  // Scaled factor so heuristic is admissible (h(n) <= true distance)
+  return Math.hypot(dx, dy) * 0.045;
+}
+
+// A* Search Algorithm with step recording for visualization
+export function aStarSearch(sourceId, targetId, adj, allLocations) {
+  const locMap = new Map(allLocations.map(l => [l.id, l]));
+  const targetLoc = locMap.get(targetId);
+
   if (sourceId === targetId) {
-    return { path: [sourceId], time: 0 };
+    return { path: [sourceId], time: 0, visitedNodes: [sourceId], steps: [] };
+  }
+
+  const gScore = new Map();
+  const fScore = new Map();
+  const prev = new Map();
+  const openSet = new Set([sourceId]);
+  const closedSet = new Set();
+  const visitedOrder = [];
+  const steps = []; // each step records { current, openSet, closedSet, gScore, fScore, consideredEdge }
+
+  allLocations.forEach(loc => {
+    gScore.set(loc.id, Infinity);
+    fScore.set(loc.id, Infinity);
+  });
+
+  gScore.set(sourceId, 0);
+  const startH = euclideanHeuristic(locMap.get(sourceId), targetLoc);
+  fScore.set(sourceId, startH);
+
+  while (openSet.size > 0) {
+    // Find node in openSet with lowest fScore
+    let current = null;
+    let lowestF = Infinity;
+    openSet.forEach(node => {
+      const f = fScore.get(node) ?? Infinity;
+      if (f < lowestF) {
+        lowestF = f;
+        current = node;
+      }
+    });
+
+    if (!current) break;
+
+    visitedOrder.push(current);
+    openSet.delete(current);
+    closedSet.add(current);
+
+    steps.push({
+      currentNode: current,
+      openSet: Array.from(openSet),
+      closedSet: Array.from(closedSet),
+      currentG: gScore.get(current),
+      currentF: fScore.get(current),
+      action: current === targetId ? 'TARGET_REACHED' : 'EXPANDING'
+    });
+
+    if (current === targetId) {
+      break;
+    }
+
+    const neighbors = adj.get(current) || [];
+    for (const edge of neighbors) {
+      if (closedSet.has(edge.target)) continue;
+
+      const tentativeG = gScore.get(current) + edge.time;
+      if (!openSet.has(edge.target)) {
+        openSet.add(edge.target);
+      } else if (tentativeG >= (gScore.get(edge.target) ?? Infinity)) {
+        continue;
+      }
+
+      prev.set(edge.target, current);
+      gScore.set(edge.target, tentativeG);
+      const h = euclideanHeuristic(locMap.get(edge.target), targetLoc);
+      fScore.set(edge.target, tentativeG + h);
+    }
+  }
+
+  if (!prev.has(targetId) && sourceId !== targetId) {
+    return { path: [], time: Infinity, visitedNodes: visitedOrder, steps };
+  }
+
+  const path = [];
+  let curr = targetId;
+  while (curr) {
+    path.unshift(curr);
+    curr = prev.get(curr);
+  }
+
+  return { path, time: gScore.get(targetId), visitedNodes: visitedOrder, steps };
+}
+
+export function dijkstraWithSteps(sourceId, targetId, adj) {
+  if (sourceId === targetId) {
+    return { path: [sourceId], time: 0, visitedOrder: [sourceId], steps: [] };
   }
 
   const dist = new Map();
   const prev = new Map();
   const visited = new Set();
-  
+  const visitedOrder = [];
+  const steps = [];
+
   adj.forEach((_, node) => dist.set(node, Infinity));
   dist.set(sourceId, 0);
 
@@ -98,9 +198,17 @@ export function dijkstra(sourceId, targetId, adj) {
     });
 
     if (u === null || minDist === Infinity) break;
-    if (u === targetId) break;
-
     visited.add(u);
+    visitedOrder.push(u);
+
+    steps.push({
+      currentNode: u,
+      visited: Array.from(visited),
+      distance: minDist,
+      action: u === targetId ? 'TARGET_REACHED' : 'EXPANDING'
+    });
+
+    if (u === targetId) break;
 
     const neighbors = adj.get(u) || [];
     for (const edge of neighbors) {
@@ -115,7 +223,7 @@ export function dijkstra(sourceId, targetId, adj) {
   }
 
   if (dist.get(targetId) === Infinity) {
-    return { path: [], time: Infinity };
+    return { path: [], time: Infinity, visitedOrder, steps };
   }
 
   const path = [];
@@ -125,7 +233,9 @@ export function dijkstra(sourceId, targetId, adj) {
     curr = prev.get(curr);
   }
 
-  return { path, time: dist.get(targetId) };
+export function dijkstra(sourceId, targetId, adj) {
+  const res = dijkstraWithSteps(sourceId, targetId, adj);
+  return { path: res.path, time: res.time };
 }
 
 /**
