@@ -15,10 +15,13 @@ import {
   Zap,
   HelpCircle,
   ShieldCheck,
-  Scale
+  Scale,
+  Compass,
+  Cpu
 } from 'lucide-react';
 import InteractiveMap from './components/InteractiveMap';
 import HubAllocationGame from './components/HubAllocationGame';
+import DirectedGraphVisualizer from './components/DirectedGraphVisualizer';
 import {
   INITIAL_HUBS,
   INITIAL_ZONES,
@@ -30,6 +33,7 @@ import {
 
 export default function App() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [step2View, setStep2View] = useState('graph'); // 'graph' | 'argon'
   const [hubs] = useState(INITIAL_HUBS);
   const [zones] = useState(INITIAL_ZONES);
   const [roads] = useState(INITIAL_ROADS);
@@ -310,14 +314,40 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Gamified & Argon AI Solver Component */}
-              <HubAllocationGame
-                hubs={hubs}
-                zones={zones}
-                roads={roads}
-                orders={orders}
-                onApplyAllocation={handleRecalculate}
-              />
+              {/* Step 2 Sub-Nav: Directed Graph Vector Visualizer vs Argon AI Game */}
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <button
+                  className={`btn-secondary ${step2View === 'graph' ? 'active' : ''}`}
+                  onClick={() => setStep2View('graph')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.2rem', fontSize: '0.88rem' }}
+                >
+                  <Compass size={16} /> 🧭 Directed Weighted Graph Visualizer (A* & Dijkstra)
+                </button>
+                <button
+                  className={`btn-secondary ${step2View === 'argon' ? 'active' : ''}`}
+                  onClick={() => setStep2View('argon')}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.2rem', fontSize: '0.88rem' }}
+                >
+                  <Cpu size={16} /> ⚡ Argon AI Hub Partitioning & Game
+                </button>
+              </div>
+
+              {step2View === 'graph' ? (
+                <DirectedGraphVisualizer
+                  hubs={hubs}
+                  zones={zones}
+                  roads={roads}
+                  orders={orders}
+                />
+              ) : (
+                <HubAllocationGame
+                  hubs={hubs}
+                  zones={zones}
+                  roads={roads}
+                  orders={orders}
+                  onApplyAllocation={handleRecalculate}
+                />
+              )}
             </div>
           )}
 
