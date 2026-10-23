@@ -25,7 +25,13 @@ import {
   AlertTriangle,
   HelpCircle,
   X,
-  FileText
+  FileText,
+  Share2,
+  Copy,
+  Check,
+  Maximize2,
+  Minimize2,
+  Navigation
 } from 'lucide-react';
 import {
   INITIAL_HUBS,
@@ -107,6 +113,16 @@ export default function App() {
   const [newDimensions, setNewDimensions] = useState('30x20x15 cm');
   const [newDestId, setNewDestId] = useState('ZONE-D');
 
+  // Panel width expansion state ('520px', '720px', '900px')
+  const [panelWidth, setPanelWidth] = useState('540px');
+
+  // Guided Step State: 1 = Inputs, 2 = A* Optimal Hub, 3 = Capacity Optimization, 4 = Driver Waypoint Manifest & Share
+  const [activeStep, setActiveStep] = useState(1);
+
+  // Selected driver for full route visualization and sharing
+  const [selectedDriverId, setSelectedDriverId] = useState('VAN-201');
+  const [copiedManifest, setCopiedManifest] = useState(false);
+
   const allLocations = [...hubs, ...zones];
   const adj = buildAdjacencyList(allLocations, roads);
 
@@ -135,6 +151,22 @@ export default function App() {
   const driverRoute = hubPlan?.routes.find(r => r.stopSequence.some(p => p.id === activeOrder?.id)) || hubPlan?.routes[0];
   const assignedDriver = driverRoute?.driver;
 
+  // Find route for the explicitly selected driver (for Step 4 Driver Dispatch Waypoint Manifest)
+  let activeDriverRoute = null;
+  let activeDriverHub = hubs[0];
+  for (const hp of dispatchResult.hubPlans) {
+    const found = hp.routes.find(r => r.driver.id === selectedDriverId);
+    if (found) {
+      activeDriverRoute = found;
+      activeDriverHub = hp.hub;
+      break;
+    }
+  }
+  if (!activeDriverRoute && dispatchResult.hubPlans[0]?.routes[0]) {
+    activeDriverRoute = dispatchResult.hubPlans[0].routes[0];
+    activeDriverHub = dispatchResult.hubPlans[0].hub;
+  }
+
   // Check if active order has capacity overload
   const isOverloaded = assignedPkg?.capacityOverflow || (assignedDriver && assignedDriver.currentLoad > assignedDriver.maxCapacity);
 
@@ -143,11 +175,23 @@ export default function App() {
   const pathNodes = aStarRes.path || [];
   const etaMinutes = aStarRes.time || 0;
 
-  // Build GPS coordinate points for polyline
-  const routeLatLngs = pathNodes.map(id => {
+  // Order route waypoints
+  const orderRouteLatLngs = pathNodes.map(id => {
     const loc = allLocations.find(l => l.id === id);
     return loc ? [loc.lat, loc.lng] : null;
   }).filter(Boolean);
+
+  // Complete driver route waypoints (from Step 4)
+  const driverWaypointsLatLngs = (activeDriverRoute?.waypoints || []).map(id => {
+    const loc = allLocations.find(l => l.id === id);
+    return loc ? [loc.lat, loc.lng] : null;
+  }).filter(Boolean);
+
+  // Determine which route to display on map: driver full circuit in Step 4, or order route in Steps 1-3
+  const isShowingDriverManifest = activeStep === 4;
+  const routeLatLngs = isShowingDriverManifest && driverWaypointsLatLngs.length > 1
+    ? driverWaypointsLatLngs
+    : orderRouteLatLngs;
 
   // Vehicle position interpolation along GPS road segments
   const getVehiclePos = () => {
@@ -179,26 +223,86 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isDriving]);
 
+  // Toast notification for seamless feedback
+  const [recalcBanner, setRecalcBanner] = useState(null);
+
+  // Quick preset hubs for effortless testing by judges/users
+  const PRESET_HUBS = [
+    {
+      name: 'North Bangalore Hub (Hebbal)',
+      address: 'Outer Ring Road, Hebbal Flyover',
+      pincode: '560092',
+      lat: 13.0358,
+      lng: 77.5970,
+      driverName: 'Arun Prakash (North Van)',
+      capacity: 55,
+      connections: [{ to: 'ZONE-A', time: 14.0 }, { to: 'ZONE-F', time: 18.0 }]
+    },
+    {
+      name: 'West Logistics Park (Rajajinagar)',
+      address: 'Industrial Suburb, Chord Road',
+      pincode: '560010',
+      lat: 12.9982,
+      lng: 77.5530,
+      driverName: 'Vikram Seth (West EV)',
+      capacity: 50,
+      connections: [{ to: 'HUB-01', time: 11.0 }, { to: 'ZONE-B', time: 16.0 }]
+    },
+    {
+      name: 'South-West Hub (Banashankari)',
+      address: '100ft Ring Road, Phase 3',
+      pincode: '560085',
+      lat: 12.9255,
+      lng: 77.5468,
+      driverName: 'Manoj Hegde (Cargo Bike)',
+      capacity: 35,
+      connections: [{ to: 'ZONE-B', time: 13.0 }, { to: 'ZONE-C', time: 14.0 }]
+    }
+  ];
+
+  // Handler to apply a quick preset in the modal
+  const applyPreset = (preset) => {
+    setNewHubName(preset.name);
+    setNewHubAddress(preset.address);
+    setNewHubPincode(preset.pincode);
+    setNewHubLat(preset.lat.toString());
+    setNewHubLng(preset.lng.toString());
+    setNewHubDriverName(preset.driverName);
+    setNewHubCapacity(preset.capacity.toString());
+  };
+
   // Handler to add a new hub
   const handleAddHub = (e) => {
     e.preventDefault();
     if (!newHubName || !newHubAddress) return;
     const hubId = `HUB-0${hubs.length + 1}`;
+    const newHubLatNum = parseFloat(newHubLat) || 13.0358;
+    const newHubLngNum = parseFloat(newHubLng) || 77.5970;
+
     const newHub = {
       id: hubId,
       name: newHubName,
       address: newHubAddress,
       pincode: newHubPincode,
-      lat: parseFloat(newHubLat) || 13.0358,
-      lng: parseFloat(newHubLng) || 77.5970,
+      lat: newHubLatNum,
+      lng: newHubLngNum,
       x: 350,
       y: 100,
       isHub: true
     };
 
-    // Auto connect new hub to closest zone via roads
-    const newRoad1 = { from: hubId, to: 'ZONE-A', time: 14.0 };
-    const newRoad2 = { from: hubId, to: 'ZONE-B', time: 19.0 };
+    // Calculate intelligent road links: connect new hub to the 2 geographically nearest zones
+    const sortedZones = [...zones].map(z => {
+      const dLat = (z.lat - newHubLatNum) * 111; // ~111 km per deg lat
+      const dLng = (z.lng - newHubLngNum) * 102; // ~102 km per deg lng at Bangalore lat
+      const km = Math.hypot(dLat, dLng);
+      // Rough Bangalore road speed: 25 km/h -> mins = (km / 25) * 60
+      const driveTime = Math.max(6, Math.round((km / 25) * 60));
+      return { zoneId: z.id, time: driveTime };
+    }).sort((a, b) => a.time - b.time);
+
+    const newRoad1 = { from: hubId, to: sortedZones[0].zoneId, time: sortedZones[0].time };
+    const newRoad2 = { from: hubId, to: sortedZones[1].zoneId, time: sortedZones[1].time };
 
     // Add stationed driver for this new hub
     const newDriverId = `VAN-${(hubs.length + 1) * 100 + 1}`;
@@ -216,6 +320,12 @@ export default function App() {
     setShowAddHubModal(false);
     setNewHubName('');
     setNewHubAddress('');
+
+    // Trigger seamless visual recalculation banner
+    setRecalcBanner(`⚡ Added "${newHub.name}"! A* and CVRP engine instantly re-evaluated all nearest hubs & assigned agents.`);
+    setTimeout(() => {
+      setRecalcBanner(null);
+    }, 6000);
   };
 
   const handleAddOrder = (e) => {
@@ -234,6 +344,47 @@ export default function App() {
     setDriveProgress(0);
     setNewCustName('');
     setNewWeight('');
+  };
+
+  // 1-Click: Generate incoming batch of dynamic orders
+  const handleGenerateRandomOrders = (count = 1) => {
+    const SAMPLE_NAMES = [
+      'Vikram Malhotra', 'Pooja Hegde', 'Rohan Sengupta', 'Ananya Sharma',
+      'Kabir Mehta', 'Deepika Rao', 'Siddharth Varma', 'Tanvi Deshmukh',
+      'Arjun Reddy', 'Nisha Iyer', 'Farhan Akhtar', 'Shruti Haasan'
+    ];
+    const SAMPLE_DIMENSIONS = [
+      '25x20x15 cm', '30x25x20 cm', '35x30x20 cm', '40x35x25 cm', '20x15x10 cm'
+    ];
+
+    const newOrdersList = [];
+    for (let i = 0; i < count; i++) {
+      const randomZone = zones[Math.floor(Math.random() * zones.length)];
+      const randomName = SAMPLE_NAMES[Math.floor(Math.random() * SAMPLE_NAMES.length)];
+      const randomDim = SAMPLE_DIMENSIONS[Math.floor(Math.random() * SAMPLE_DIMENSIONS.length)];
+      const randomWeight = parseFloat((Math.random() * 14 + 5).toFixed(1)); // 5.0kg to 19.0kg
+      const newId = `ORD-${Math.floor(100 + Math.random() * 900)}`;
+
+      newOrdersList.push({
+        id: newId,
+        destinationId: randomZone.id,
+        weight: randomWeight,
+        dimensions: randomDim,
+        customerName: randomName
+      });
+    }
+
+    const updatedOrders = [...orders, ...newOrdersList];
+    setOrders(updatedOrders);
+    setSelectedOrderId(newOrdersList[newOrdersList.length - 1].id);
+    setDriveProgress(0);
+    setIsDriving(false);
+
+    // Provide immediate visual notification
+    setRecalcBanner(`⚡ Generated ${count} new order(s)! A* identified nearest hubs & allocated to stationed drivers with updated CVRP payload.`);
+    setTimeout(() => {
+      setRecalcBanner(null);
+    }, 6000);
   };
 
   const handleReset = () => {
@@ -261,7 +412,16 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <button
+            className="btn-primary"
+            onClick={() => handleGenerateRandomOrders(1)}
+            style={{ background: '#2563eb', borderColor: '#2563eb', fontSize: '0.82rem' }}
+            title="Simulate incoming real-time customer order"
+          >
+            <Zap size={15} /> + Generate New Order
+          </button>
+
           <button
             className="btn-primary"
             onClick={() => setShowAddHubModal(true)}
@@ -306,276 +466,702 @@ export default function App() {
       </div>
 
       {/* 3. Main Split View: Left Inputs/Outputs | Right Live Map */}
-      <div className="app-layout">
+      <div className="app-layout" style={{ '--sidebar-width': panelWidth }}>
         
-        {/* LEFT PANEL: Inputs & Outputs */}
+        {/* LEFT PANEL: Expandable, Step-by-Step Guided Navigation */}
         <div className="left-sidebar">
+
+          {/* Panel Header: Stepper & Width Expansion Controls */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.65rem 1rem',
+            background: '#ffffff',
+            borderBottom: '1px solid #e2e8f0'
+          }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Navigation size={16} color="#1a73e8" />
+              <span>Routing Pipeline Steps</span>
+            </div>
+
+            {/* Expansion Width Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 6 }}>
+              <button
+                type="button"
+                onClick={() => setPanelWidth('540px')}
+                style={{
+                  background: panelWidth === '540px' ? '#ffffff' : 'transparent',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  color: panelWidth === '540px' ? '#1a73e8' : '#64748b',
+                  boxShadow: panelWidth === '540px' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+                title="Standard Panel Width (540px)"
+              >
+                Standard
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPanelWidth('760px')}
+                style={{
+                  background: panelWidth === '760px' ? '#ffffff' : 'transparent',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  color: panelWidth === '760px' ? '#1a73e8' : '#64748b',
+                  boxShadow: panelWidth === '760px' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+                title="Expanded Wide View (760px)"
+              >
+                Wide
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPanelWidth('960px')}
+                style={{
+                  background: panelWidth === '960px' ? '#ffffff' : 'transparent',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  color: panelWidth === '960px' ? '#1a73e8' : '#64748b',
+                  boxShadow: panelWidth === '960px' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+                title="Full Width Manifest (960px)"
+              >
+                Full
+              </button>
+            </div>
+          </div>
+
+          {/* Stepper Tabs */}
+          <div className="workflow-stepper">
+            <button
+              className={`step-btn ${activeStep === 1 ? 'active' : ''}`}
+              onClick={() => setActiveStep(1)}
+            >
+              <span className="step-number">1</span>
+              <span>Inputs & Orders</span>
+            </button>
+
+            <button
+              className={`step-btn ${activeStep === 2 ? 'active' : ''}`}
+              onClick={() => setActiveStep(2)}
+            >
+              <span className="step-number">2</span>
+              <span>A* Closest Hub</span>
+            </button>
+
+            <button
+              className={`step-btn ${activeStep === 3 ? 'active' : ''}`}
+              onClick={() => setActiveStep(3)}
+            >
+              <span className="step-number">3</span>
+              <span>Vehicle Capacity</span>
+            </button>
+
+            <button
+              className={`step-btn ${activeStep === 4 ? 'active' : ''}`}
+              onClick={() => setActiveStep(4)}
+            >
+              <span className="step-number">4</span>
+              <span>Driver Route & Share</span>
+            </button>
+          </div>
+
           <div className="sidebar-scrollable">
             
-            {/* OUTPUT HIGHLIGHT BOX (Assigned Delivery Agent, Sequenced Route, ETA) */}
-            <div className="panel-card" style={{ border: '2px solid #1a73e8', background: '#f8fbff' }}>
-              <div className="panel-card-title" style={{ color: '#1a73e8', borderBottomColor: '#dbeafe' }}>
-                <CheckCircle2 size={16} color="#1a73e8" />
-                <span>Engine Optimization Output (Selected Order)</span>
-              </div>
-
-              {/* Output Item 1: Assigned Hub & Delivery Agent */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
-                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
-                    Assigned Delivery Hub
-                  </div>
-                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
-                    🏢 {assignedHub.name.split(' ')[0]} Hub
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Pincode: {assignedHub.pincode}</div>
-                </div>
-
-                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
-                    Assigned Agent ID
-                  </div>
-                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1a73e8', marginTop: 2 }}>
-                    🚚 {assignedDriver ? assignedDriver.id : 'VAN-101'}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    {assignedDriver?.name} ({assignedDriver?.vehicle})
-                  </div>
-                </div>
-              </div>
-
-              {/* Output Item 2: Estimated Time of Arrival (ETA) */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem', marginBottom: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
-                    Estimated Delivery Time (ETA)
-                  </div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
-                    ⏱️ {etaMinutes.toFixed(0)} minutes
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: 4, fontWeight: 700 }}>
-                    Shortest Path Verified
-                  </span>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 3 }}>
-                    Algorithm: A* Euclidean
-                  </div>
-                </div>
-              </div>
-
-              {/* Output Item 3: Sequenced Delivery Route List */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
-                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>
-                  Sequenced Delivery Route Waypoints
-                </div>
-                <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#1a73e8' }}>
-                  {pathNodes.join(' ➔ ')}
-                </div>
-              </div>
-
-              {/* A* Multi-Hub Evaluation Comparison Bar */}
-              <div style={{ marginTop: '0.85rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
-                <div style={{ fontSize: '0.7rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
-                  A* Proximity from all {hubs.length} Hubs to Customer:
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {hubEvaluations.map(ev => (
-                    <div key={ev.hub.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: ev.isOptimal ? '#166534' : '#64748b', fontWeight: ev.isOptimal ? 800 : 500 }}>
-                      <span>{ev.isOptimal ? '✅ Optimal Hub: ' : '• '}{ev.hub.name.split(' ')[0]} ({ev.hub.id})</span>
-                      <span style={{ fontFamily: 'var(--font-mono)' }}>{ev.time.toFixed(0)} mins</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Capacity Warning Banner if Overloaded */}
-              {isOverloaded && (
-                <div style={{ marginTop: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '0.55rem 0.75rem', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#b91c1c' }}>
-                  <AlertTriangle size={15} color="#dc2626" />
-                  <span><strong>Capacity Alert:</strong> Package exceeds vehicle threshold ({activeOrder.weight}kg vs {assignedDriver?.maxCapacity}kg max). Flags dispatch coordinator for freight split!</span>
-                </div>
-              )}
-
-              {/* Live Drive Simulation Button */}
-              <div style={{ marginTop: '0.85rem' }}>
+            {/* Real-time A* Recalculation Toast Alert */}
+            {recalcBanner && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1.5px solid #3b82f6',
+                borderRadius: 8,
+                padding: '0.75rem 1rem',
+                color: '#1d4ed8',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                animation: 'pulse 1.5s infinite'
+              }}>
+                <Zap size={18} color="#2563eb" />
+                <div style={{ flex: 1 }}>{recalcBanner}</div>
                 <button
-                  onClick={() => {
-                    if (driveProgress >= 1) setDriveProgress(0);
-                    setIsDriving(!isDriving);
-                  }}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.6rem' }}
+                  onClick={() => setRecalcBanner(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6' }}
                 >
-                  <Truck size={15} /> {isDriving ? 'Pause Trip Simulation' : (driveProgress >= 1 ? 'Replay Delivery Drive' : 'Simulate Vehicle Drive on Map')}
+                  <X size={14} />
                 </button>
               </div>
-            </div>
+            )}
 
-            {/* INPUT PANEL: Active Hubs List */}
-            <div className="panel-card">
-              <div className="panel-card-title">
-                <Building2 size={16} color="#1a73e8" />
-                <span>Input: Regional Fulfillment Hubs ({hubs.length})</span>
-              </div>
+            {/* STEP 1: INPUTS (Hubs, Packages, Add Order) */}
+            {activeStep === 1 && (
+              <>
+                {/* Active Hubs List */}
+                <div className="panel-card">
+                  <div className="panel-card-title">
+                    <Building2 size={16} color="#1a73e8" />
+                    <span>Input 1: Regional Fulfillment Hubs ({hubs.length})</span>
+                  </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {hubs.map((hub) => {
-                  const hubOrders = dispatchResult.ordersWithAssignedHub.filter(o => o.assignedHubId === hub.id);
-                  return (
-                    <div key={hub.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.6rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong style={{ fontSize: '0.86rem', color: '#0f172a' }}>{hub.name}</strong>
-                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                          {hub.address} • Pincode: {hub.pincode}
+                  <div style={{ display: 'grid', gridTemplateColumns: panelWidth !== '540px' ? 'repeat(auto-fit, minmax(240px, 1fr))' : '1fr', gap: '0.5rem' }}>
+                    {hubs.map((hub) => {
+                      const hubOrders = dispatchResult.ordersWithAssignedHub.filter(o => o.assignedHubId === hub.id);
+                      return (
+                        <div key={hub.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <strong style={{ fontSize: '0.86rem', color: '#0f172a' }}>{hub.name}</strong>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              {hub.address} • Pincode: {hub.pincode}
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '0.74rem', background: '#1a73e8', color: '#fff', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                            {hubOrders.length} Allocated
+                          </span>
                         </div>
-                      </div>
-                      <span style={{ fontSize: '0.74rem', background: '#1a73e8', color: '#fff', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
-                        {hubOrders.length} Allocated
-                      </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Incoming Packages List */}
+                <div className="panel-card">
+                  <div className="panel-card-title" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <PackageIcon size={16} color="#1a73e8" />
+                      <span>Input 2: Incoming Packages ({orders.length})</span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* INPUT PANEL: Incoming Packages List */}
-            <div className="panel-card">
-              <div className="panel-card-title">
-                <PackageIcon size={16} color="#1a73e8" />
-                <span>Input: Incoming Packages ({orders.length})</span>
-              </div>
+                    {/* Quick Simulation Order Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateRandomOrders(1)}
+                        style={{
+                          background: '#eff6ff',
+                          border: '1px solid #bfdbfe',
+                          borderRadius: 5,
+                          padding: '3px 8px',
+                          fontSize: '0.73rem',
+                          fontWeight: 700,
+                          color: '#1d4ed8',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <Zap size={13} color="#2563eb" /> + 1 New Order
+                      </button>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 220, overflowY: 'auto' }}>
-                {orders.map((ord) => {
-                  const dest = zones.find(z => z.id === ord.destinationId);
-                  const isSelected = ord.id === selectedOrderId;
-                  return (
-                    <div
-                      key={ord.id}
-                      className={`order-item-row ${isSelected ? 'active' : ''}`}
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateRandomOrders(3)}
+                        style={{
+                          background: '#f0fdf4',
+                          border: '1px solid #bbf7d0',
+                          borderRadius: 5,
+                          padding: '3px 8px',
+                          fontSize: '0.73rem',
+                          fontWeight: 700,
+                          color: '#15803d',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <Plus size={13} color="#16a34a" /> + 3 Batch Orders
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: panelWidth !== '540px' ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr', gap: '0.55rem', maxHeight: 340, overflowY: 'auto' }}>
+                    {orders.map((ord) => {
+                      const dest = zones.find(z => z.id === ord.destinationId);
+                      const isSelected = ord.id === selectedOrderId;
+                      
+                      const pkgAlloc = dispatchResult.ordersWithAssignedHub.find(o => o.id === ord.id);
+                      const pkgHub = hubs.find(h => h.id === pkgAlloc?.assignedHubId);
+                      const orderHubPlan = dispatchResult.hubPlans.find(hp => hp.hub.id === pkgAlloc?.assignedHubId);
+                      const orderDriverRoute = orderHubPlan?.routes.find(r => r.stopSequence.some(p => p.id === ord.id)) || orderHubPlan?.routes[0];
+                      const driverAlloc = orderDriverRoute?.driver;
+
+                      return (
+                        <div
+                          key={ord.id}
+                          className={`order-item-row ${isSelected ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedOrderId(ord.id);
+                            setDriveProgress(0);
+                            setIsDriving(false);
+                          }}
+                          style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#0f172a' }}>
+                                {ord.customerName}
+                              </div>
+                              <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: 1 }}>
+                                Box: {ord.dimensions} • Weight: <strong>{ord.weight} kg</strong>
+                              </div>
+                            </div>
+
+                            <span style={{
+                              fontSize: '0.74rem',
+                              background: isSelected ? '#1a73e8' : '#f1f5f9',
+                              color: isSelected ? '#ffffff' : '#334155',
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              fontWeight: 700
+                            }}>
+                              {ord.id}
+                            </span>
+                          </div>
+
+                          <div style={{
+                            marginTop: 4,
+                            paddingTop: 6,
+                            borderTop: '1px solid #e2e8f0',
+                            display: 'grid',
+                            gridTemplateColumns: '1.2fr 1fr',
+                            gap: 8,
+                            fontSize: '0.73rem'
+                          }}>
+                            <div style={{ background: '#ffffff', padding: '4px 8px', borderRadius: 5, border: '1px solid #e2e8f0' }}>
+                              <span style={{ color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                                📍 Drop-off Point:
+                              </span>
+                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{dest?.name}</span>
+                              <span style={{ color: '#64748b', marginLeft: 4 }}>({dest?.pincode})</span>
+                            </div>
+
+                            <div style={{ background: '#f0fdf4', padding: '4px 8px', borderRadius: 5, border: '1px solid #bbf7d0' }}>
+                              <span style={{ color: '#166534', fontSize: '0.68rem', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                                🚚 Allocated Driver:
+                              </span>
+                              <span style={{ fontWeight: 800, color: '#15803d' }}>
+                                {driverAlloc ? driverAlloc.id : 'Pending'}
+                              </span>
+                              <span style={{ color: '#166534', display: 'block', fontSize: '0.68rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {driverAlloc?.name?.split(' ')[0]} ({pkgHub?.name?.split(' ')[0]} Hub)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Add Order Form */}
+                <div className="panel-card">
+                  <div className="panel-card-title">
+                    <Plus size={16} color="#1a73e8" />
+                    <span>+ Add Incoming Order</span>
+                  </div>
+
+                  <form onSubmit={handleAddOrder} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Customer Name"
+                      value={newCustName}
+                      onChange={(e) => setNewCustName(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
+                    />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        required
+                        placeholder="Weight (kg)"
+                        value={newWeight}
+                        onChange={(e) => setNewWeight(e.target.value)}
+                        style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Dimensions"
+                        value={newDimensions}
+                        onChange={(e) => setNewDimensions(e.target.value)}
+                        style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
+                      />
+                    </div>
+
+                    <select
+                      value={newDestId}
+                      onChange={(e) => setNewDestId(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem', background: '#fff' }}
+                    >
+                      {zones.map(z => (
+                        <option key={z.id} value={z.id}>{z.name} (Pincode: {z.pincode})</option>
+                      ))}
+                    </select>
+
+                    <button type="submit" className="btn-primary" style={{ marginTop: 2 }}>
+                      <Plus size={15} /> Add Order & Recompute
+                    </button>
+                  </form>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn-primary" onClick={() => setActiveStep(2)}>
+                    Next: A* Closest Hub Allocation <ChevronRight size={16} />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* STEP 2: A* CLOSEST HUB ALLOCATION */}
+            {activeStep === 2 && (
+              <>
+                <div className="panel-card" style={{ border: '2px solid #1a73e8', background: '#f8fbff' }}>
+                  <div className="panel-card-title" style={{ color: '#1a73e8', borderBottomColor: '#dbeafe' }}>
+                    <CheckCircle2 size={16} color="#1a73e8" />
+                    <span>A* Shortest-Path Hub Assignment (Order: {activeOrder.id})</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Assigned Delivery Hub
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                        🏢 {assignedHub.name.split(' ')[0]} Hub
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Pincode: {assignedHub.pincode}</div>
+                    </div>
+
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Estimated Time (ETA)
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1a73e8', marginTop: 2 }}>
+                        ⏱️ {etaMinutes.toFixed(0)} minutes
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>A* Heuristic: Euclidean</div>
+                    </div>
+                  </div>
+
+                  {/* Sequenced Route Waypoints */}
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.65rem 0.85rem', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>
+                      Shortest Path Waypoints from Nearest Hub:
+                    </div>
+                    <div style={{ fontSize: '0.84rem', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#1a73e8' }}>
+                      {pathNodes.join(' ➔ ')}
+                    </div>
+                  </div>
+
+                  {/* A* Proximity Matrix Across All Hubs */}
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.75rem 0.85rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
+                      A* Distance Check from All {hubs.length} Hubs to {destZone?.name}:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {hubEvaluations.map(ev => (
+                        <div key={ev.hub.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: ev.isOptimal ? '#166534' : '#64748b', fontWeight: ev.isOptimal ? 800 : 500, padding: '3px 6px', background: ev.isOptimal ? '#f0fdf4' : 'transparent', borderRadius: 4 }}>
+                          <span>{ev.isOptimal ? '✅ Optimal Hub: ' : '• '}{ev.hub.name} ({ev.hub.id})</span>
+                          <span style={{ fontFamily: 'var(--font-mono)' }}>{ev.time.toFixed(0)} mins</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Trip Simulation Button */}
+                  <div style={{ marginTop: '0.85rem' }}>
+                    <button
                       onClick={() => {
-                        setSelectedOrderId(ord.id);
-                        setDriveProgress(0);
-                        setIsDriving(false);
+                        if (driveProgress >= 1) setDriveProgress(0);
+                        setIsDriving(!isDriving);
+                      }}
+                      className="btn-primary"
+                      style={{ width: '100%', padding: '0.6rem' }}
+                    >
+                      <Truck size={15} /> {isDriving ? 'Pause Trip Simulation' : (driveProgress >= 1 ? 'Replay Delivery Drive' : 'Simulate Vehicle Drive on Map')}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <button className="btn-secondary" onClick={() => setActiveStep(1)}>
+                    Back to Inputs
+                  </button>
+                  <button className="btn-primary" onClick={() => setActiveStep(3)}>
+                    Next: Fleet Vehicle Capacity <ChevronRight size={16} />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* STEP 3: FLEET VEHICLE CAPACITIES & BIN PACKING */}
+            {activeStep === 3 && (
+              <>
+                <div className="panel-card">
+                  <div className="panel-card-title">
+                    <Truck size={16} color="#1a73e8" />
+                    <span>Fleet Vehicle Capacities & Payload Limits</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: panelWidth !== '540px' ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr', gap: '0.65rem' }}>
+                    {drivers.map(driver => {
+                      let driverRoute = null;
+                      for (const plan of dispatchResult.hubPlans) {
+                        const found = plan.routes.find(r => r.driver.id === driver.id);
+                        if (found) {
+                          driverRoute = found;
+                          break;
+                        }
+                      }
+
+                      const load = driverRoute ? driverRoute.driver.currentLoad : 0;
+                      const isOver = load > driver.maxCapacity;
+                      const percent = Math.min(100, Math.round((load / driver.maxCapacity) * 100));
+                      const parentHub = hubs.find(h => h.id === driver.hubId);
+
+                      return (
+                        <div
+                          key={driver.id}
+                          style={{
+                            background: '#f8fafc',
+                            border: `1.5px solid ${isOver ? '#fca5a5' : '#e2e8f0'}`,
+                            borderRadius: 8,
+                            padding: '0.75rem 0.85rem'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
+                            <div>
+                              <strong>{driver.name}</strong>
+                              <span style={{ fontSize: '0.74rem', background: '#e2e8f0', color: '#334155', padding: '2px 6px', borderRadius: 4, marginLeft: 6, fontWeight: 700 }}>
+                                {driver.id}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
+                              🏢 {parentHub?.name?.split(' ')[0]} Hub
+                            </span>
+                          </div>
+
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem', color: '#64748b' }}>
+                            <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ width: `${percent}%`, height: '100%', background: isOver ? '#ef4444' : '#1a73e8' }} />
+                            </div>
+                            <span style={{ fontWeight: 600 }}>
+                              {load.toFixed(1)} / <strong>{driver.maxCapacity} kg</strong> ({percent}%)
+                            </span>
+                          </div>
+
+                          <div style={{ marginTop: 8, fontSize: '0.72rem', color: '#64748b' }}>
+                            Vehicle Model: <strong>{driver.vehicle}</strong> • Status: {load > 0 ? '🟢 Active on Delivery Run' : '⚪ Standby at Depot'}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <button className="btn-secondary" onClick={() => setActiveStep(2)}>
+                    Back to Closest Hub
+                  </button>
+                  <button className="btn-primary" onClick={() => setActiveStep(4)}>
+                    Next: Driver Dispatch Path & Share <ChevronRight size={16} />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* STEP 4: DRIVER'S PATH TO GO & MANIFEST SHARE */}
+            {activeStep === 4 && (
+              <>
+                <div className="panel-card" style={{ border: '2px solid #16a34a', background: '#fcfdfc' }}>
+                  <div className="panel-card-title" style={{ color: '#16a34a', borderBottomColor: '#bbf7d0', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Truck size={18} color="#16a34a" />
+                      <span>Driver Turn-by-Turn Path & Dispatch Manifest</span>
+                    </div>
+
+                    {/* Driver Selector Dropdown */}
+                    <select
+                      value={selectedDriverId}
+                      onChange={(e) => setSelectedDriverId(e.target.value)}
+                      style={{
+                        padding: '4px 8px',
+                        border: '1.5px solid #16a34a',
+                        borderRadius: 6,
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        color: '#166534',
+                        background: '#ffffff',
+                        cursor: 'pointer'
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#0f172a' }}>
-                          {ord.customerName}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                          📍 {dest?.name} • Pincode: <strong>{dest?.pincode}</strong>
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 2 }}>
-                          Box: {ord.dimensions} • Weight: <strong>{ord.weight} kg</strong>
-                        </div>
-                      </div>
+                      {drivers.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{
-                          fontSize: '0.74rem',
-                          background: isSelected ? '#1a73e8' : '#f1f5f9',
-                          color: isSelected ? '#ffffff' : '#334155',
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          fontWeight: 700
-                        }}>
-                          {ord.id}
-                        </span>
-                      </div>
+                  {/* Driver Route Header Info */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.6rem 0.8rem' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Driver Name</div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{activeDriverRoute?.driver.name}</div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* INPUT PANEL: Fleet Vehicle Capacities */}
-            <div className="panel-card">
-              <div className="panel-card-title">
-                <Truck size={16} color="#1a73e8" />
-                <span>Input: Fleet Vehicle Capacities ({drivers.length} Agents)</span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {drivers.map(driver => {
-                  const matchingRoute = hubPlan?.routes.find(r => r.driver.id === driver.id);
-                  const load = matchingRoute ? matchingRoute.driver.currentLoad : 0;
-                  const isOver = load > driver.maxCapacity;
-                  const percent = Math.min(100, Math.round((load / driver.maxCapacity) * 100));
-
-                  return (
-                    <div key={driver.id} style={{ background: '#f8fafc', border: `1px solid ${isOver ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 6, padding: '0.6rem 0.8rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                        <strong>{driver.name} ({driver.id})</strong>
-                        <span style={{ color: '#64748b' }}>{driver.vehicle}</span>
-                      </div>
-
-                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem', color: '#64748b' }}>
-                        <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${percent}%`, height: '100%', background: isOver ? '#ef4444' : '#1a73e8' }} />
-                        </div>
-                        <span>
-                          {load.toFixed(1)} / <strong>{driver.maxCapacity} kg</strong> ({percent}%)
-                        </span>
-                      </div>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.6rem 0.8rem' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Vehicle / ID</div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#16a34a' }}>{activeDriverRoute?.driver.id}</div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* INPUT PANEL: Add Order Form */}
-            <div className="panel-card">
-              <div className="panel-card-title">
-                <Plus size={16} color="#1a73e8" />
-                <span>+ Add Incoming Order</span>
-              </div>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.6rem 0.8rem' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Starting Hub</div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{activeDriverHub?.name.split(' ')[0]} Hub</div>
+                    </div>
 
-              <form onSubmit={handleAddOrder} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                <input
-                  type="text"
-                  required
-                  placeholder="Customer Name"
-                  value={newCustName}
-                  onChange={(e) => setNewCustName(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
-                />
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '0.6rem 0.8rem' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Total Trip Duration</div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>⏱️ {activeDriverRoute?.totalDurationMins?.toFixed(0) || 0} mins</div>
+                    </div>
+                  </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <input
-                    type="number"
-                    step="0.5"
-                    required
-                    placeholder="Weight (kg)"
-                    value={newWeight}
-                    onChange={(e) => setNewWeight(e.target.value)}
-                    style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Dimensions"
-                    value={newDimensions}
-                    onChange={(e) => setNewDimensions(e.target.value)}
-                    style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem' }}
-                  />
+                  {/* Complete Turn-by-Turn Waypoints Circuit */}
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.75rem 0.85rem', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
+                      Complete Highway & Zone Waypoint Circuit:
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      flexWrap: 'wrap',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.82rem',
+                      fontWeight: 800,
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      {(activeDriverRoute?.waypoints || [activeDriverHub?.id]).map((node, i, arr) => (
+                        <React.Fragment key={i}>
+                          <span style={{
+                            color: node.startsWith('HUB') ? '#1a73e8' : '#0f172a',
+                            background: node.startsWith('HUB') ? '#eff6ff' : '#ffffff',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            border: '1px solid #cbd5e1'
+                          }}>
+                            {node}
+                          </span>
+                          {i < arr.length - 1 && <span style={{ color: '#94a3b8' }}>➔</span>}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Customer Drop-off Stop List */}
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.75rem 0.85rem', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
+                      Customer Drop-off Points ({activeDriverRoute?.stopSequence.length || 0} Orders):
+                    </div>
+
+                    {(!activeDriverRoute?.stopSequence || activeDriverRoute.stopSequence.length === 0) ? (
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic', padding: 8 }}>
+                        No drop-offs assigned for this driver currently.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {activeDriverRoute.stopSequence.map((pkg, idx) => {
+                          const pZone = zones.find(z => z.id === pkg.destinationId);
+                          return (
+                            <div
+                              key={pkg.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '6px 10px',
+                                background: '#f8fafc',
+                                borderRadius: 6,
+                                border: '1px solid #e2e8f0',
+                                fontSize: '0.78rem'
+                              }}
+                            >
+                              <div>
+                                <span style={{
+                                  background: '#16a34a',
+                                  color: '#fff',
+                                  fontWeight: 800,
+                                  fontSize: '0.7rem',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  marginRight: 8
+                                }}>
+                                  Stop #{idx + 1}
+                                </span>
+                                <strong>{pZone?.name}</strong>
+                                <span style={{ color: '#64748b', marginLeft: 6 }}>
+                                  • Customer: {pkg.customerName} (Pincode: {pZone?.pincode})
+                                </span>
+                              </div>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#166534' }}>
+                                {pkg.id} ({pkg.weight} kg)
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Share Route Action Bar */}
+                  <div style={{ display: 'flex', gap: '0.65rem' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        const manifestText = `🚚 Delivery Dispatch Manifest - Agent ${activeDriverRoute?.driver.id} (${activeDriverRoute?.driver.name})\nHub: ${activeDriverHub?.name} (${activeDriverHub?.pincode})\nVehicle: ${activeDriverRoute?.driver.vehicle} (Load: ${activeDriverRoute?.driver.currentLoad}kg / ${activeDriverRoute?.driver.maxCapacity}kg)\nEstimated Trip Time: ${activeDriverRoute?.totalDurationMins?.toFixed(0)} mins\n\nWaypoints Path: ${activeDriverRoute?.waypoints.join(' -> ')}\n\nDrop-off Deliveries:\n${activeDriverRoute?.stopSequence.map((p, i) => `${i + 1}. Order ${p.id} - ${p.customerName} @ ${zones.find(z => z.id === p.destinationId)?.name} (Weight: ${p.weight}kg, Box: ${p.dimensions})`).join('\n')}`;
+                        navigator.clipboard.writeText(manifestText);
+                        setCopiedManifest(true);
+                        setTimeout(() => setCopiedManifest(false), 3000);
+                      }}
+                      style={{ flex: 1, background: '#16a34a', borderColor: '#16a34a' }}
+                    >
+                      {copiedManifest ? <Check size={16} /> : <Share2 size={16} />}
+                      {copiedManifest ? 'Copied Driver Manifest to Clipboard!' : 'Share Path & Manifest to Driver (Copy)'}
+                    </button>
+                  </div>
                 </div>
 
-                <select
-                  value={newDestId}
-                  onChange={(e) => setNewDestId(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.84rem', background: '#fff' }}
-                >
-                  {zones.map(z => (
-                    <option key={z.id} value={z.id}>{z.name} (Pincode: {z.pincode})</option>
-                  ))}
-                </select>
-
-                <button type="submit" className="btn-primary" style={{ marginTop: 2 }}>
-                  <Plus size={15} /> Allocate & Optimize Route
-                </button>
-              </form>
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <button className="btn-secondary" onClick={() => setActiveStep(3)}>
+                    Back to Fleet Capacities
+                  </button>
+                </div>
+              </>
+            )}
 
           </div>
         </div>
@@ -627,7 +1213,7 @@ export default function App() {
               <Polyline
                 positions={routeLatLngs}
                 pathOptions={{
-                  color: isOverloaded ? '#ea4335' : '#1a73e8',
+                  color: isShowingDriverManifest ? '#16a34a' : (isOverloaded ? '#ea4335' : '#1a73e8'),
                   weight: 6,
                   opacity: 0.95
                 }}
@@ -638,7 +1224,11 @@ export default function App() {
             {routeLatLngs.length > 1 && (
               <Marker
                 position={getVehiclePos()}
-                icon={createPin('🚚 ' + (assignedDriver ? assignedDriver.id : 'VAN-101'), isOverloaded ? '#b91c1c' : '#0f172a', false)}
+                icon={createPin(
+                  '🚚 ' + (isShowingDriverManifest ? (activeDriverRoute?.driver?.id || 'DRIVER') : (assignedDriver ? assignedDriver.id : 'VAN-101')),
+                  isShowingDriverManifest ? '#15803d' : (isOverloaded ? '#b91c1c' : '#0f172a'),
+                  false
+                )}
               />
             )}
 
@@ -740,6 +1330,37 @@ export default function App() {
               >
                 <X size={20} />
               </button>
+            </div>
+
+            {/* Quick 1-Click Presets */}
+            <div style={{ padding: '0.85rem 1.25rem 0.5rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
+                ⚡ Quick Presets (1-Click Fill & Test A*):
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {PRESET_HUBS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      color: '#1a73e8',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    <span>+</span> {preset.name.split(' ')[0]} Hub
+                  </button>
+                ))}
+              </div>
             </div>
 
             <form onSubmit={handleAddHub} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
