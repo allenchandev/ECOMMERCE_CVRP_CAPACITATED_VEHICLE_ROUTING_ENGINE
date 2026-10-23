@@ -316,7 +316,8 @@ export function solveMultiHubCVRP(hubs, zones, roads, orders, drivers) {
       }
 
       if (!assigned) {
-        // Fallback: assign to first driver if capacity full for demo resilience
+        // Mark as overflow if all vehicles at hub exceed payload capacity
+        pkg.capacityOverflow = true;
         if (activeFleet.length > 0) {
           activeFleet[0].assignedPackages.push(pkg);
           activeFleet[0].currentLoad += pkg.weight;
