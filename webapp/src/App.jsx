@@ -37,35 +37,15 @@ import {
 // Custom Pin Icon for Google Maps
 function createPin(title, color, isHub) {
   const html = `
-    <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
-      <div style="
-        background: ${color};
-        color: #ffffff;
-        font-weight: 700;
-        font-size: ${isHub ? '11px' : '10px'};
-        padding: ${isHub ? '3px 8px' : '2px 6px'};
-        border-radius: 12px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-        border: 2px solid #ffffff;
-        white-space: nowrap;
-      ">
-        ${isHub ? '🏢 ' : ''}${title}
-      </div>
-      <div style="
-        width: 0;
-        height: 0;
-        border-left: 5px solid transparent;
-        border-right: 5px solid transparent;
-        border-top: 6px solid ${color};
-        margin-top: -1px;
-      "></div>
+    <div style="display: inline-flex; align-items: center; gap: 4px; background: ${color}; color: #ffffff; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2px solid #ffffff; white-space: nowrap;">
+      ${isHub ? '🏢 ' : '📍 '}${title}
     </div>
   `;
   return L.divIcon({
     html,
     className: 'custom-map-pin',
-    iconSize: [80, 30],
-    iconAnchor: [40, 28]
+    iconSize: [100, 24],
+    iconAnchor: [50, 12]
   });
 }
 
@@ -80,10 +60,10 @@ function MapRecenter({ routeLatLngs, originLoc }) {
     if (routeLatLngs && routeLatLngs.length > 1) {
       try {
         const bounds = L.latLngBounds(routeLatLngs);
-        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 13 });
       } catch (e) {}
     } else if (originLoc) {
-      map.setView([originLoc.lat, originLoc.lng], 13);
+      map.setView([originLoc.lat, originLoc.lng], 12);
     }
   }, [routeLatLngs, originLoc, map]);
 
@@ -466,10 +446,11 @@ export default function App() {
             scrollWheelZoom={true}
             style={{ width: '100%', height: '100%' }}
           >
-            {/* Clean Google Maps / Carto Voyager Street Tiles */}
+            {/* 100% Free OpenStreetMap Light Street Tiles (No API Key Required) */}
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={18}
             />
 
             <MapRecenter routeLatLngs={routeLatLngs} originLoc={assignedHub} />
