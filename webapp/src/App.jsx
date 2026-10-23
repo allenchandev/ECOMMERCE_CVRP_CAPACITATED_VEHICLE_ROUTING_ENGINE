@@ -1,451 +1,738 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import {
+  Building2,
   Package as PackageIcon,
   Truck,
-  MapPin,
-  Clock,
-  ArrowRight,
-  ArrowLeft,
   RotateCcw,
-  Building2,
-  Plus,
-  Play,
-  CheckCircle2,
   Compass,
+  Play,
+  Pause,
+  Plus,
+  MapPin,
+  CheckCircle2,
+  Clock,
   Layers,
-  Scale
+  ChevronRight,
+  TrendingDown,
+  Info,
+  GitBranch,
+  Route
 } from 'lucide-react';
-import InteractiveMap from './components/InteractiveMap';
-import OptimalPathFinder from './components/OptimalPathFinder';
 import {
   INITIAL_HUBS,
   INITIAL_ZONES,
   INITIAL_ROADS,
   INITIAL_DRIVERS,
   INITIAL_ORDERS,
-  solveMultiHubCVRP
+  solveMultiHubCVRP,
+  aStarSearch,
+  dijkstraWithSteps,
+  buildAdjacencyList
 } from './cvrpEngine';
 
+// Pin icons for Google Maps
+function createMarkerIcon(title, color, isHub) {
+  const iconHtml = `
+    <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+      <div style="
+        background: ${color};
+        color: #ffffff;
+        font-weight: 700;
+        font-size: ${isHub ? '11px' : '10px'};
+        padding: ${isHub ? '3px 8px' : '2px 6px'};
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+        border: 2px solid #ffffff;
+        white-space: nowrap;
+      ">
+        ${isHub ? '🏢 ' : ''}${title}
+      </div>
+      <div style="
+        width: 0;
+        height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid ${color};
+        margin-top: -1px;
+      "></div>
+    </div>
+  `;
+  return L.divIcon({
+    html: iconHtml,
+    className: 'custom-map-pin',
+    iconSize: [80, 30],
+    iconAnchor: [40, 28]
+  });
+}
+
+// Center map to bounds helper
+function MapController({ selectedLoc, routeLatLngs }) {
+  const map = useMap();
+  useEffect(() => {
+    if (routeLatLngs && routeLatLngs.length > 1) {
+      const bounds = L.latLngBounds(routeLatLngs);
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+    } else if (selectedLoc) {
+      map.setView([selectedLoc.lat, selectedLoc.lng], 13);
+    }
+  }, [selectedLoc, routeLatLngs, map]);
+  return null;
+}
+
 export default function App() {
-  const [currentStep, setCurrentStep] = useState(2); // start on step 2 for user focus
+  // Seamless View Mode:
+  // 'path' = Single Order Direct A* Shortest Vector
+  // 'fleet' = Full Multi-Stop Fleet CVRP Tour (All vehicle loops)
+  const [viewMode, setViewMode] = useState('path'); 
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'fleet' | 'add'
   const [hubs] = useState(INITIAL_HUBS);
   const [zones] = useState(INITIAL_ZONES);
   const [roads] = useState(INITIAL_ROADS);
   const [drivers] = useState(INITIAL_DRIVERS);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
-  const [selectedHubId, setSelectedHubId] = useState(null);
 
-  // New order form
+  // Selected order to inspect on the map
+  const [selectedOrderId, setSelectedOrderId] = useState('ORD-904'); // default to Whitefield order
+  const [selectedDriverId, setSelectedDriverId] = useState('VAN-101');
+  const [isDriving, setIsDriving] = useState(false);
+  const [driveProgress, setDriveProgress] = useState(0);
+
+  // New order form inputs
   const [newCustName, setNewCustName] = useState('');
   const [newWeight, setNewWeight] = useState('');
   const [newDestId, setNewDestId] = useState('ZONE-D');
 
-  // Solution computation
-  const [dispatchResult, setDispatchResult] = useState(() =>
-    solveMultiHubCVRP(INITIAL_HUBS, INITIAL_ZONES, INITIAL_ROADS, INITIAL_ORDERS, INITIAL_DRIVERS)
-  );
+  const allLocations = [...hubs, ...zones];
+  const adj = buildAdjacencyList(allLocations, roads);
 
-  const handleRecalculate = () => {
-    const result = solveMultiHubCVRP(hubs, zones, roads, orders, drivers);
-    setDispatchResult(result);
+  // Multi-hub CVRP dispatch solution
+  const dispatchResult = solveMultiHubCVRP(hubs, zones, roads, orders, drivers);
+
+  // Find active selected order and its closest hub
+  const activeOrder = orders.find(o => o.id === selectedOrderId) || orders[0];
+  const assignedPkg = dispatchResult.ordersWithAssignedHub.find(o => o.id === activeOrder?.id);
+  const assignedHub = hubs.find(h => h.id === assignedPkg?.assignedHubId) || hubs[0];
+  const destinationZone = zones.find(z => z.id === activeOrder?.destinationId);
+
+  // Compute exact A* shortest path from assigned hub to customer
+  const aStarPathResult = aStarSearch(assignedHub.id, activeOrder?.destinationId, adj, allLocations);
+  const optimalPathNodes = aStarPathResult.path || [];
+  const singlePathLatLngs = optimalPathNodes.map(id => {
+    const loc = allLocations.find(l => l.id === id);
+    return loc ? [loc.lat, loc.lng] : null;
+  }).filter(Boolean);
+
+  // Colors for fleet routes
+  const FLEET_COLORS = ['#1a73e8', '#9333ea', '#059669', '#d97706', '#dc2626'];
+
+  // All active routes from dispatch
+  const allFleetRoutes = dispatchResult.hubPlans.flatMap(hp => hp.routes);
+  const activeFleetRoute = allFleetRoutes.find(r => r.driver.id === selectedDriverId) || allFleetRoutes[0];
+
+  // Route latlngs for active fleet route
+  const fleetRouteLatLngs = activeFleetRoute
+    ? activeFleetRoute.waypoints.map(id => {
+        const loc = allLocations.find(l => l.id === id);
+        return loc ? [loc.lat, loc.lng] : null;
+      }).filter(Boolean)
+    : [];
+
+  // Determine which latlngs to drive on
+  const activeTourLatLngs = viewMode === 'path' ? singlePathLatLngs : fleetRouteLatLngs;
+
+  // Interpolate vehicle GPS position during drive simulation
+  const getVehiclePos = () => {
+    if (activeTourLatLngs.length < 2) return activeTourLatLngs[0] || [12.9716, 77.5946];
+    const totalSegments = activeTourLatLngs.length - 1;
+    const scaled = driveProgress * totalSegments;
+    const segIdx = Math.min(Math.floor(scaled), totalSegments - 1);
+    const segT = scaled - segIdx;
+    const p1 = activeTourLatLngs[segIdx];
+    const p2 = activeTourLatLngs[segIdx + 1];
+    return [
+      p1[0] + (p2[0] - p1[0]) * segT,
+      p1[1] + (p2[1] - p1[1]) * segT
+    ];
   };
+
+  // Drive animation timer
+  useEffect(() => {
+    if (!isDriving) return;
+    const interval = setInterval(() => {
+      setDriveProgress(prev => {
+        if (prev >= 1) {
+          setIsDriving(false);
+          return 1;
+        }
+        return prev + 0.015;
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isDriving]);
 
   const handleAddOrder = (e) => {
     e.preventDefault();
     if (!newCustName || !newWeight) return;
-
+    const newId = `ORD-${Math.floor(100 + Math.random() * 900)}`;
     const newOrder = {
-      id: `ORD-${Math.floor(100 + Math.random() * 900)}`,
+      id: newId,
       destinationId: newDestId,
       weight: parseFloat(newWeight),
       dimensions: '30x20x15 cm',
       customerName: newCustName
     };
-
-    const updated = [...orders, newOrder];
-    setOrders(updated);
-    setDispatchResult(solveMultiHubCVRP(hubs, zones, roads, updated, drivers));
+    setOrders([...orders, newOrder]);
+    setSelectedOrderId(newId);
     setNewCustName('');
     setNewWeight('');
+    setActiveTab('orders');
+    setViewMode('path');
   };
 
   const handleReset = () => {
     setOrders(INITIAL_ORDERS);
-    setSelectedHubId(null);
-    setDispatchResult(solveMultiHubCVRP(INITIAL_HUBS, INITIAL_ZONES, INITIAL_ROADS, INITIAL_ORDERS, INITIAL_DRIVERS));
+    setSelectedOrderId('ORD-904');
+    setDriveProgress(0);
+    setIsDriving(false);
+    setViewMode('path');
   };
 
-  const totalOrdersWeight = orders.reduce((sum, o) => sum + o.weight, 0);
-
-  const steps = [
-    { num: 1, title: 'Fulfillment Hubs & Packages', desc: 'Warehouses, inventory & demand' },
-    { num: 2, title: 'Directed Graph Routing (A* / Dijkstra)', desc: 'Weighted vector optimization' },
-    { num: 3, title: 'Multi-Vehicle Delivery Fleet', desc: 'Turn-by-turn road simulation' },
-    { num: 4, title: 'Vehicle Payload & Schedules', desc: 'Capacity limits & stop sequences' }
-  ];
-
   return (
-    <div className="app-container">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      
       {/* Top Header */}
       <header className="app-header">
         <div className="brand-section">
           <div className="brand-icon">
-            <Building2 size={24} />
+            <Building2 size={22} />
           </div>
           <div>
-            <h1 className="brand-title">Bangalore E-Commerce Logistics Dispatcher</h1>
-            <div className="brand-subtitle">Multi-Hub Capacitated Vehicle Routing System (CVRP)</div>
+            <h1 className="brand-title">Bangalore Logistics Dispatch Console</h1>
+            <div className="brand-subtitle">Automated Multi-Hub CVRP Routing Engine</div>
           </div>
         </div>
 
-        <button className="btn-secondary" onClick={handleReset}>
-          <RotateCcw size={15} /> Reset System
-        </button>
+        {/* View Mode Switcher: Point-to-Point A* vs Multi-Stop Fleet CVRP Tour */}
+        <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', padding: 3, borderRadius: 8 }}>
+          <button
+            onClick={() => { setViewMode('path'); setDriveProgress(0); setIsDriving(false); }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: viewMode === 'path' ? '#ffffff' : 'transparent',
+              color: viewMode === 'path' ? '#1a73e8' : '#64748b',
+              border: 'none',
+              borderRadius: 6,
+              padding: '0.45rem 0.95rem',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: viewMode === 'path' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s'
+            }}
+          >
+            <Compass size={15} /> Single Order Shortest Path (A*)
+          </button>
+
+          <button
+            onClick={() => { setViewMode('fleet'); setDriveProgress(0); setIsDriving(false); setActiveTab('fleet'); }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: viewMode === 'fleet' ? '#ffffff' : 'transparent',
+              color: viewMode === 'fleet' ? '#1a73e8' : '#64748b',
+              border: 'none',
+              borderRadius: 6,
+              padding: '0.45rem 0.95rem',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: viewMode === 'fleet' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s'
+            }}
+          >
+            <Route size={15} /> Multi-Stop Fleet Tour (CVRP)
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button className="btn-secondary" onClick={handleReset}>
+            <RotateCcw size={14} /> Reset
+          </button>
+        </div>
       </header>
 
-      {/* Stepper Progress Tabs */}
-      <div className="stepper-nav">
-        {steps.map((s) => (
-          <div
-            key={s.num}
-            className={`step-tab ${currentStep === s.num ? 'active' : ''}`}
-            onClick={() => setCurrentStep(s.num)}
-          >
-            <div className="step-number">{s.num}</div>
-            <div>
-              <div className="step-title">{s.title}</div>
-              <div className="step-desc">{s.desc}</div>
-            </div>
+      {/* Main Seamless Workspace */}
+      <div className="app-dashboard">
+        
+        {/* Left Side Dispatch Panel */}
+        <div className="dashboard-sidebar">
+          
+          {/* Navigation Bar */}
+          <div className="sidebar-tabs">
+            <button
+              className={`sidebar-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('orders'); setViewMode('path'); }}
+            >
+              <PackageIcon size={16} /> Orders ({orders.length})
+            </button>
+            <button
+              className={`sidebar-tab-btn ${activeTab === 'fleet' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('fleet'); setViewMode('fleet'); }}
+            >
+              <Truck size={16} /> Fleet Routes ({allFleetRoutes.length})
+            </button>
+            <button
+              className={`sidebar-tab-btn ${activeTab === 'add' ? 'active' : ''}`}
+              onClick={() => setActiveTab('add')}
+            >
+              <Plus size={16} /> New Order
+            </button>
           </div>
-        ))}
-      </div>
 
-      {/* Main Container */}
-      <main className="step-container">
-        <div className="step-content-card">
-
-          {/* ================= STEP 1: MULTI-HUBS & ORDERS ================= */}
-          {currentStep === 1 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Regional Fulfillment Hubs & Order Backlog</h2>
-                  <p className="step-subheading">
-                    Active fulfillment centers across Bangalore and pending package shipments waiting for vehicle dispatch.
-                  </p>
-                </div>
-                <span className="badge badge-black" style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
-                  {hubs.length} Hubs • {orders.length} Packages ({totalOrdersWeight.toFixed(1)} kg Total)
+          {/* Active Highlight Card depending on Mode */}
+          {viewMode === 'path' ? (
+            /* MODE 1: Single Order A* Inspection */
+            <div style={{
+              background: '#f8fbff',
+              borderBottom: '1px solid #cbd5e1',
+              padding: '1rem 1.25rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#1a73e8', fontWeight: 800 }}>
+                  A* Shortest Vector
+                </span>
+                <span style={{
+                  fontSize: '0.75rem',
+                  background: '#1a73e8',
+                  color: '#ffffff',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontWeight: 700
+                }}>
+                  {aStarPathResult.time.toFixed(0)} mins
                 </span>
               </div>
 
-              {/* 3 Hubs Showcase */}
-              <div style={{ marginBottom: '2rem' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, marginBottom: '0.8rem', textTransform: 'uppercase', color: '#94a3b8' }}>
-                  Fulfillment Warehouses:
-                </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem' }}>
-                  {hubs.map((hub, idx) => {
-                    const assignedDrivers = drivers.filter(d => d.hubId === hub.id);
-                    const colorStrip = idx === 0 ? '#6366f1' : (idx === 1 ? '#06b6d4' : '#ec4899');
-                    return (
-                      <div key={hub.id} style={{ background: '#0d1527', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '1.2rem', borderLeft: `5px solid ${colorStrip}` }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#ffffff' }}>{hub.name}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 3 }}>{hub.address} • {hub.pincode}</div>
-                        <div style={{ marginTop: '0.85rem', display: 'flex', gap: 8, fontSize: '0.8rem' }}>
-                          <span className="badge badge-light">ID: {hub.id}</span>
-                          <span className="badge badge-black">{assignedDrivers.length} Stationed Vehicles</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                {activeOrder.customerName}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+                Nearest Hub: <strong>{assignedHub.name}</strong> ➔ <strong>{destinationZone?.name}</strong>
+              </div>
+
+              {/* Waypoints sequence */}
+              <div style={{ marginTop: 8, fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: '#1a73e8', fontWeight: 700, background: '#ffffff', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                {optimalPathNodes.join(' ➔ ')}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: 10 }}>
+                <button
+                  onClick={() => {
+                    if (driveProgress >= 1) setDriveProgress(0);
+                    setIsDriving(!isDriving);
+                  }}
+                  className="btn-primary"
+                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.82rem' }}
+                >
+                  <Truck size={14} /> {isDriving ? 'Pause Drive' : (driveProgress >= 1 ? 'Replay Drive' : 'Simulate Single Delivery')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* MODE 2: Full Vehicle CVRP Multi-Stop Inspection */
+            <div style={{
+              background: '#faf5ff',
+              borderBottom: '1px solid #d8b4fe',
+              padding: '1rem 1.25rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#9333ea', fontWeight: 800 }}>
+                  Multi-Stop CVRP Loop
+                </span>
+                <span style={{
+                  fontSize: '0.75rem',
+                  background: '#9333ea',
+                  color: '#ffffff',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontWeight: 700
+                }}>
+                  {activeFleetRoute?.totalDurationMins.toFixed(0)} mins Total Tour
+                </span>
+              </div>
+
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                Driver: {activeFleetRoute?.driver.name} ({activeFleetRoute?.driver.vehicle})
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+                Stationed Hub: <strong>{activeFleetRoute?.hub.name}</strong>
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: '0.78rem', fontFamily: 'var(--font-mono)', color: '#9333ea', fontWeight: 700, background: '#ffffff', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                {activeFleetRoute?.waypoints.join(' ➔ ')}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: 10 }}>
+                <button
+                  onClick={() => {
+                    if (driveProgress >= 1) setDriveProgress(0);
+                    setIsDriving(!isDriving);
+                  }}
+                  className="btn-primary"
+                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.82rem', background: '#9333ea', borderColor: '#9333ea' }}
+                >
+                  <Truck size={14} /> {isDriving ? 'Pause Tour' : (driveProgress >= 1 ? 'Replay Tour' : 'Simulate Complete Van Tour')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Scrollable Tab Content */}
+          <div className="sidebar-scroll-body">
+            
+            {/* ORDERS TAB */}
+            {activeTab === 'orders' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Click an order to view its individual direct path:
                 </div>
-              </div>
-
-              {/* Orders Grid */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
-                  Pending Orders ({orders.length}):
-                </h3>
-              </div>
-
-              <div className="orders-table-grid">
-                {orders.map((ord) => {
+                {orders.map(ord => {
                   const dest = zones.find(z => z.id === ord.destinationId);
+                  const pkg = dispatchResult.ordersWithAssignedHub.find(p => p.id === ord.id);
+                  const hub = hubs.find(h => h.id === pkg?.assignedHubId);
+                  const isSelected = ord.id === selectedOrderId;
+
                   return (
-                    <div key={ord.id} className="order-box">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div
+                      key={ord.id}
+                      onClick={() => {
+                        setSelectedOrderId(ord.id);
+                        setDriveProgress(0);
+                        setViewMode('path');
+                      }}
+                      style={{
+                        background: isSelected ? '#f0f7ff' : '#ffffff',
+                        border: isSelected ? '1.5px solid #1a73e8' : '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        padding: '0.8rem 1rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isSelected ? '0 2px 8px rgba(26,115,232,0.1)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <strong style={{ fontSize: '1rem', color: '#ffffff' }}>{ord.customerName}</strong>
-                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{ord.id}</div>
+                          <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{ord.customerName}</strong>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                            Destination: <strong>{dest?.name}</strong>
+                          </div>
                         </div>
-                        <span style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38bdf8', color: '#38bdf8', padding: '2px 8px', borderRadius: 4, fontWeight: 800, fontSize: '0.8rem' }}>
-                          {ord.weight} kg
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#1a73e8' }}>
+                            {pkg?.distanceToHubMins.toFixed(0)} mins
+                          </span>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{ord.weight} kg</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 6, borderTop: '1px solid #f1f5f9', fontSize: '0.74rem' }}>
+                        <span style={{ color: '#475569' }}>
+                          Closest Warehouse: <strong>{hub?.name.split(' ')[0]}</strong>
                         </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.86rem', color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', padding: '0.45rem 0.65rem', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <MapPin size={15} color="#38bdf8" /> <span><strong>Destination:</strong> {dest?.name}</span>
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                        Pincode: {dest?.pincode} • Dimensions: {ord.dimensions}
+                        <ChevronRight size={14} color="#94a3b8" />
                       </div>
                     </div>
                   );
                 })}
               </div>
+            )}
 
-              {/* Add Order form */}
-              <div style={{ marginTop: '2rem', padding: '1.25rem', background: '#0d1527', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12 }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: '0.75rem', color: '#ffffff' }}>
-                  + Add Package to Dispatch Queue
-                </h3>
-                <form onSubmit={handleAddOrder} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* FLEET ROUTES TAB */}
+            {activeTab === 'fleet' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Click a vehicle to inspect its full multi-stop delivery loop:
+                </div>
+                {allFleetRoutes.map((r, rIdx) => {
+                  const driver = r.driver;
+                  const isSelectedDriver = driver.id === selectedDriverId;
+                  const percentUsed = ((driver.currentLoad / driver.maxCapacity) * 100).toFixed(0);
+                  const color = FLEET_COLORS[rIdx % FLEET_COLORS.length];
+
+                  return (
+                    <div
+                      key={driver.id}
+                      onClick={() => {
+                        setSelectedDriverId(driver.id);
+                        setViewMode('fleet');
+                        setDriveProgress(0);
+                      }}
+                      style={{
+                        background: isSelectedDriver ? '#faf5ff' : '#ffffff',
+                        border: isSelectedDriver ? `2px solid ${color}` : '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        padding: '0.85rem 1rem',
+                        cursor: 'pointer',
+                        boxShadow: isSelectedDriver ? '0 2px 8px rgba(147, 51, 234, 0.15)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{driver.name}</strong>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            {driver.vehicle} • ID: {driver.id}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: color }}>
+                          ⏱️ {r.totalDurationMins.toFixed(0)} mins
+                        </span>
+                      </div>
+
+                      {/* Capacity progress */}
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b', marginBottom: 3 }}>
+                          <span>Payload Loaded:</span>
+                          <strong>{driver.currentLoad.toFixed(1)} / {driver.maxCapacity} kg ({percentUsed}%)</strong>
+                        </div>
+                        <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${percentUsed}%`, height: '100%', background: color }} />
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 8, fontSize: '0.74rem', color: '#334155' }}>
+                        <strong>Stops ({r.stopSequence.length}):</strong> {r.stopSequence.map(p => zones.find(z => z.id === p.destinationId)?.name.split(' ')[0]).join(' ➔ ')} ➔ Return to Hub
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* NEW ORDER FORM TAB */}
+            {activeTab === 'add' && (
+              <form onSubmit={handleAddOrder} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', padding: '0.5rem 0' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                    Customer Name
+                  </label>
                   <input
                     type="text"
-                    placeholder="Customer Name"
+                    required
+                    placeholder="e.g. Rahul Sharma"
                     value={newCustName}
                     onChange={(e) => setNewCustName(e.target.value)}
-                    style={{ flex: 2, minWidth: 200, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
+                    style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.86rem' }}
                   />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                    Package Weight (kg)
+                  </label>
                   <input
                     type="number"
                     step="0.5"
-                    placeholder="Weight (kg)"
+                    required
+                    placeholder="e.g. 12"
                     value={newWeight}
                     onChange={(e) => setNewWeight(e.target.value)}
-                    style={{ flex: 1, minWidth: 120, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
+                    style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.86rem' }}
                   />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#475569', marginBottom: 4 }}>
+                    Bangalore Delivery Zone
+                  </label>
                   <select
                     value={newDestId}
                     onChange={(e) => setNewDestId(e.target.value)}
-                    style={{ flex: 2, minWidth: 220, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
+                    style={{ width: '100%', padding: '0.6rem 0.8rem', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: '0.86rem', background: '#fff' }}
                   >
                     {zones.map(z => (
-                      <option key={z.id} value={z.id}>{z.name} ({z.id})</option>
+                      <option key={z.id} value={z.id}>{z.name} ({z.pincode})</option>
                     ))}
                   </select>
-                  <button type="submit" className="btn-primary">
-                    <Plus size={16} /> Add Package
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* ================= STEP 2: DIRECTED GRAPH VECTOR ROUTING ================= */}
-          {currentStep === 2 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Directed Weighted Graph Routing (A* & Dijkstra)</h2>
-                  <p className="step-subheading">
-                    The algorithm calculates the exact minimum-weight road path from fulfillment hubs to customer drop-off points.
-                  </p>
                 </div>
-                <button className="btn-primary" onClick={handleRecalculate}>
-                  <RotateCcw size={15} /> Recalculate Graph
+
+                <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }}>
+                  <Plus size={16} /> Dispatch Package
                 </button>
-              </div>
+              </form>
+            )}
 
-              {/* Single dedicated, unified visualizer */}
-              <OptimalPathFinder
-                hubs={hubs}
-                zones={zones}
-                roads={roads}
-                orders={orders}
+          </div>
+        </div>
+
+        {/* Right Interactive Real Google Maps Canvas */}
+        <div className="dashboard-map-viewport">
+          <MapContainer
+            center={[12.9716, 77.6408]}
+            zoom={12}
+            scrollWheelZoom={true}
+            style={{ width: '100%', height: '100%' }}
+          >
+            {/* Crisp OpenStreetMap / Carto Voyager Light Tile Layer */}
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            />
+
+            <MapController
+              selectedLoc={assignedHub}
+              routeLatLngs={activeTourLatLngs}
+            />
+
+            {/* Base Bangalore Roads */}
+            {roads.map((road, idx) => {
+              const fromLoc = allLocations.find(l => l.id === road.from);
+              const toLoc = allLocations.find(l => l.id === road.to);
+              if (!fromLoc || !toLoc) return null;
+
+              return (
+                <Polyline
+                  key={`road-${idx}`}
+                  positions={[[fromLoc.lat, fromLoc.lng], [toLoc.lat, toLoc.lng]]}
+                  pathOptions={{
+                    color: '#94a3b8',
+                    weight: 3,
+                    opacity: 0.35,
+                    dashArray: '4, 6'
+                  }}
+                >
+                  <Tooltip direction="center" offset={[0, 0]} opacity={0.85}>
+                    <span>{fromLoc.name} ➔ {toLoc.name} ({road.time}m)</span>
+                  </Tooltip>
+                </Polyline>
+              );
+            })}
+
+            {/* IF IN FLEET MODE: Display All Fleet CVRP Loops simultaneously in distinct colors */}
+            {viewMode === 'fleet' && allFleetRoutes.map((route, idx) => {
+              const pts = route.waypoints.map(id => {
+                const loc = allLocations.find(l => l.id === id);
+                return loc ? [loc.lat, loc.lng] : null;
+              }).filter(Boolean);
+
+              const color = FLEET_COLORS[idx % FLEET_COLORS.length];
+              const isSelected = route.driver.id === selectedDriverId;
+
+              return (
+                <Polyline
+                  key={`fleet-route-${route.driver.id}`}
+                  positions={pts}
+                  pathOptions={{
+                    color: color,
+                    weight: isSelected ? 6 : 3.5,
+                    opacity: isSelected ? 1 : 0.45,
+                    dashArray: isSelected ? 'none' : '6, 6'
+                  }}
+                >
+                  <Tooltip sticky>
+                    <span>{route.driver.name} ({route.driver.vehicle}) — {route.totalDurationMins.toFixed(0)}m Tour</span>
+                  </Tooltip>
+                </Polyline>
+              );
+            })}
+
+            {/* IF IN PATH MODE: Show the single direct A* route in Google Blue */}
+            {viewMode === 'path' && singlePathLatLngs.length > 1 && (
+              <Polyline
+                positions={singlePathLatLngs}
+                pathOptions={{
+                  color: '#1a73e8',
+                  weight: 6,
+                  opacity: 0.95
+                }}
               />
-            </div>
-          )}
+            )}
 
-          {/* ================= STEP 3: MULTI-HUB MAP ================= */}
-          {currentStep === 3 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Multi-Vehicle Delivery Fleet Simulation</h2>
-                  <p className="step-subheading">
-                    Simulate Bangalore delivery vehicles executing optimized turn-by-turn routes departing and returning to regional hubs.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    className={`btn-secondary ${selectedHubId === null ? 'active' : ''}`}
-                    onClick={() => setSelectedHubId(null)}
-                    style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
-                  >
-                    All Hubs
-                  </button>
-                  {hubs.map(h => (
-                    <button
-                      key={h.id}
-                      className={`btn-secondary ${selectedHubId === h.id ? 'active' : ''}`}
-                      onClick={() => setSelectedHubId(h.id)}
-                      style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
-                    >
-                      {h.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Map View */}
-              <InteractiveMap
-                hubs={hubs}
-                zones={zones}
-                roads={roads}
-                hubPlans={dispatchResult.hubPlans}
-                selectedHubId={selectedHubId}
+            {/* Animated Delivery Van Moving along the active tour */}
+            {activeTourLatLngs.length > 1 && (
+              <Marker
+                position={getVehiclePos()}
+                icon={createMarkerIcon('🚚 Electric Van', viewMode === 'path' ? '#0f172a' : '#9333ea', false)}
               />
-            </div>
-          )}
+            )}
 
-          {/* ================= STEP 4: DRIVER SCHEDULES BY HUB ================= */}
-          {currentStep === 4 && (
-            <div>
-              <div className="step-header-banner">
-                <div>
-                  <h2 className="step-heading">Fleet Capacity Constraints & Dispatch Schedules</h2>
-                  <p className="step-subheading">
-                    Vehicle payload limits (25kg - 60kg) and turn-by-turn waypoint itineraries sequenced by Traveling Salesman (TSP).
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  <span className="badge badge-black" style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
-                    Total Fleet Driving Time: {dispatchResult.totalFleetDurationMins.toFixed(0)} mins
-                  </span>
-                </div>
-              </div>
+            {/* Fulfillment Hub Pins */}
+            {hubs.map((hub) => (
+              <Marker
+                key={hub.id}
+                position={[hub.lat, hub.lng]}
+                icon={createMarkerIcon(hub.name.split(' ')[0], '#1a73e8', true)}
+              >
+                <Popup>
+                  <div style={{ padding: 4 }}>
+                    <strong style={{ fontSize: '0.95rem' }}>🏢 {hub.name}</strong>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+                      {hub.address} • Pincode: {hub.pincode}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
 
-              {/* Driver schedules grouped by hub */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                {dispatchResult.hubPlans.map((hp, idx) => {
-                  const hub = hp.hub;
-                  if (hp.routes.length === 0) return null;
-                  const colorStrip = idx === 0 ? '#6366f1' : (idx === 1 ? '#06b6d4' : '#ec4899');
-
-                  return (
-                    <div key={hub.id}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1.2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.6rem' }}>
-                        <Building2 size={22} color={colorStrip} />
-                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff' }}>{hub.name} ({hub.id})</h3>
-                        <span className="badge badge-light" style={{ marginLeft: 'auto', fontWeight: 700 }}>
-                          {hp.routes.length} Active Vehicles • {hp.hubDurationMins.toFixed(0)} mins
-                        </span>
-                      </div>
-
-                      <div className="drivers-grid">
-                        {hp.routes.map((route) => {
-                          const driver = route.driver;
-                          const percentUsed = ((driver.currentLoad / driver.maxCapacity) * 100).toFixed(1);
-
-                          return (
-                            <div key={driver.id} className="driver-detail-card" style={{ borderLeft: `5px solid ${colorStrip}` }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                                    {driver.name}
-                                  </div>
-                                  <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 2 }}>
-                                    Vehicle: <strong>{driver.vehicle}</strong> ({driver.id})
-                                  </div>
-                                </div>
-                                <span className="badge badge-black" style={{ fontWeight: 800, color: '#38bdf8' }}>
-                                  ⏱️ {route.totalDurationMins.toFixed(0)} mins
-                                </span>
-                              </div>
-
-                              {/* Capacity Bar */}
-                              <div style={{ margin: '1rem 0' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 5 }}>
-                                  <span style={{ color: '#94a3b8' }}>Capacity Utilized:</span>
-                                  <strong style={{ color: '#ffffff' }}>
-                                    {driver.currentLoad.toFixed(1)} / {driver.maxCapacity.toFixed(1)} kg ({percentUsed}%)
-                                  </strong>
-                                </div>
-                                <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
-                                  <div style={{ width: `${Math.min(100, percentUsed)}%`, height: '100%', background: colorStrip, borderRadius: 4 }} />
-                                </div>
-                              </div>
-
-                              {/* Drop off sequence */}
-                              <div style={{ marginTop: '1rem' }}>
-                                <div style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.5rem' }}>
-                                  Optimized Stop Order:
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                                  {route.stopSequence.map((pkg, sIdx) => {
-                                    const dest = zones.find(z => z.id === pkg.destinationId);
-                                    return (
-                                      <div
-                                        key={pkg.id}
-                                        style={{
-                                          background: 'rgba(255,255,255,0.03)',
-                                          border: '1px solid rgba(255,255,255,0.06)',
-                                          padding: '0.55rem 0.8rem',
-                                          borderRadius: 8,
-                                          fontSize: '0.82rem'
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                          <strong style={{ color: '#ffffff' }}>Stop {sIdx + 1}: {dest?.name}</strong>
-                                          <span style={{ fontWeight: 800, color: '#38bdf8' }}>{pkg.weight} kg</span>
-                                        </div>
-                                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginTop: 2 }}>
-                                          Customer: {pkg.customerName} ({pkg.id})
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              {/* Waypoint Directions */}
-                              <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
-                                  Turn-by-Turn Waypoints:
-                                </div>
-                                <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#38bdf8', wordBreak: 'break-word', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: 6 }}>
-                                  {route.waypoints.join(' ➔ ')}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+            {/* Drop-off Zone Pins */}
+            {zones.map((zone) => {
+              const isSelectedDest = zone.id === activeOrder?.destinationId;
+              return (
+                <Marker
+                  key={zone.id}
+                  position={[zone.lat, zone.lng]}
+                  icon={createMarkerIcon(zone.name, isSelectedDest ? '#ea4335' : '#475569', false)}
+                >
+                  <Popup>
+                    <div style={{ padding: 4 }}>
+                      <strong style={{ fontSize: '0.9rem' }}>📍 {zone.name}</strong>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+                        Zone: {zone.id} • Pincode: {zone.pincode}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+          </MapContainer>
+
+          {/* Real-time Map Legend (Top Right) */}
+          <div style={{
+            position: 'absolute',
+            top: 14,
+            right: 14,
+            background: '#ffffff',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            zIndex: 1000,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontSize: '0.8rem',
+            color: '#334155'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#1a73e8' }} />
+              <strong>Fulfillment Hubs</strong>
             </div>
-          )}
-
-          {/* Stepper Navigation Buttons */}
-          <div className="step-nav-footer">
-            <button
-              className="btn-secondary"
-              onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}
-              disabled={currentStep === 1}
-              style={{ opacity: currentStep === 1 ? 0.4 : 1, cursor: currentStep === 1 ? 'not-allowed' : 'pointer' }}
-            >
-              <ArrowLeft size={16} /> Previous
-            </button>
-
-            <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#94a3b8' }}>
-              Phase {currentStep} of 4
-            </span>
-
-            <button
-              className="btn-primary"
-              onClick={() => setCurrentStep(prev => Math.min(4, prev + 1))}
-              disabled={currentStep === 4}
-              style={{ opacity: currentStep === 4 ? 0.4 : 1, cursor: currentStep === 4 ? 'not-allowed' : 'pointer' }}
-            >
-              Next Phase <ArrowRight size={16} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ea4335' }} />
+              <strong>Customer Drop-off</strong>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 16, height: 3, background: viewMode === 'path' ? '#1a73e8' : '#9333ea' }} />
+              <strong>{viewMode === 'path' ? 'A* Shortest Vector' : 'Full CVRP Fleet Loop'}</strong>
+            </div>
           </div>
-
         </div>
-      </main>
+
+      </div>
     </div>
   );
 }
