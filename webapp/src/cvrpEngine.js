@@ -227,6 +227,11 @@ export function dijkstraWithSteps(sourceId, targetId, adj) {
   }
 
   const path = [];
+  let curr = targetId;
+  while (curr) {
+    path.unshift(curr);
+    curr = prev.get(curr);
+  }
   return { path, time: dist.get(targetId), visitedOrder, steps };
 }
 
