@@ -11,17 +11,12 @@ import {
   Plus,
   Play,
   CheckCircle2,
-  Info,
-  Zap,
-  HelpCircle,
-  ShieldCheck,
-  Scale,
   Compass,
-  Cpu
+  Layers,
+  Scale
 } from 'lucide-react';
 import InteractiveMap from './components/InteractiveMap';
-import HubAllocationGame from './components/HubAllocationGame';
-import DirectedGraphVisualizer from './components/DirectedGraphVisualizer';
+import OptimalPathFinder from './components/OptimalPathFinder';
 import {
   INITIAL_HUBS,
   INITIAL_ZONES,
@@ -32,8 +27,7 @@ import {
 } from './cvrpEngine';
 
 export default function App() {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [step2View, setStep2View] = useState('graph'); // 'graph' | 'argon'
+  const [currentStep, setCurrentStep] = useState(2); // start on step 2 for user focus
   const [hubs] = useState(INITIAL_HUBS);
   const [zones] = useState(INITIAL_ZONES);
   const [roads] = useState(INITIAL_ROADS);
@@ -84,10 +78,10 @@ export default function App() {
   const totalOrdersWeight = orders.reduce((sum, o) => sum + o.weight, 0);
 
   const steps = [
-    { num: 1, title: 'Step 1: Warehouses & Orders', desc: 'Where packages start and who needs them' },
-    { num: 2, title: 'Step 2: Assign Closest Warehouse', desc: 'Orders matched to the nearest hub' },
-    { num: 3, title: 'Step 3: Watch Vehicles Deliver', desc: 'Live animated routes & optimal paths' },
-    { num: 4, title: 'Step 4: Driver Schedules', desc: 'Load limits & turn-by-turn itinerary' }
+    { num: 1, title: 'Fulfillment Hubs & Packages', desc: 'Warehouses, inventory & demand' },
+    { num: 2, title: 'Directed Graph Routing (A* / Dijkstra)', desc: 'Weighted vector optimization' },
+    { num: 3, title: 'Multi-Vehicle Delivery Fleet', desc: 'Turn-by-turn road simulation' },
+    { num: 4, title: 'Vehicle Payload & Schedules', desc: 'Capacity limits & stop sequences' }
   ];
 
   return (
@@ -99,47 +93,15 @@ export default function App() {
             <Building2 size={24} />
           </div>
           <div>
-            <h1 className="brand-title">E-Commerce Smart Delivery Dispatcher</h1>
-            <div className="brand-subtitle">Bangalore Delivery Fleet • Finds the fastest, shortest routes automatically</div>
+            <h1 className="brand-title">Bangalore E-Commerce Logistics Dispatcher</h1>
+            <div className="brand-subtitle">Multi-Hub Capacitated Vehicle Routing System (CVRP)</div>
           </div>
         </div>
 
         <button className="btn-secondary" onClick={handleReset}>
-          <RotateCcw size={15} /> Reset Demo Data
+          <RotateCcw size={15} /> Reset System
         </button>
       </header>
-
-      {/* Visual Pipeline Bar: Explains the entire concept in 1 glance */}
-      <div className="pipeline-overview-bar">
-        <div className="pipeline-card">
-          <div>
-            <div style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, letterSpacing: '0.05em' }}>
-              How This Delivery Engine Solves Routes:
-            </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
-              4-Step Automated Logistics Flow
-            </div>
-          </div>
-
-          <div className="pipeline-steps-flow">
-            <div className={`pipeline-node ${currentStep === 1 ? 'active-pipe' : ''}`}>
-              <span>📦 1. Collect Orders</span>
-            </div>
-            <span style={{ color: '#64748b' }}>➔</span>
-            <div className={`pipeline-node ${currentStep === 2 ? 'active-pipe' : ''}`}>
-              <span>🏢 2. Nearest Hub (Dijkstra)</span>
-            </div>
-            <span style={{ color: '#64748b' }}>➔</span>
-            <div className={`pipeline-node ${currentStep === 3 ? 'active-pipe' : ''}`}>
-              <span>🚚 3. Shortest Route Tour</span>
-            </div>
-            <span style={{ color: '#64748b' }}>➔</span>
-            <div className={`pipeline-node ${currentStep === 4 ? 'active-pipe' : ''}`}>
-              <span>📋 4. Driver Dispatch</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Stepper Progress Tabs */}
       <div className="stepper-nav">
@@ -167,43 +129,32 @@ export default function App() {
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 1: Delivery Hubs & Incoming Customer Orders</h2>
+                  <h2 className="step-heading">Regional Fulfillment Hubs & Order Backlog</h2>
                   <p className="step-subheading">
-                    We have <strong>3 fulfillment warehouses</strong> in Bangalore. Every morning, customers place orders across the city that need to be packaged and sent out.
+                    Active fulfillment centers across Bangalore and pending package shipments waiting for vehicle dispatch.
                   </p>
                 </div>
                 <span className="badge badge-black" style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
-                  {hubs.length} Hubs • {orders.length} Orders ({totalOrdersWeight.toFixed(1)} kg Total)
+                  {hubs.length} Hubs • {orders.length} Packages ({totalOrdersWeight.toFixed(1)} kg Total)
                 </span>
               </div>
 
-              {/* Explainer Banner */}
-              <div className="explainer-banner">
-                <Info size={20} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <div className="explainer-banner-title">What happens here?</div>
-                  <div className="explainer-banner-text">
-                    Instead of driving across the whole city from one place, Bangalore is split between <strong>3 regional warehouses</strong> (Central, Whitefield, and Electronic City). You can add new customer packages below or proceed to Step 2 to see how the system picks the best hub.
-                  </div>
-                </div>
-              </div>
-
               {/* 3 Hubs Showcase */}
-              <div style={{ marginBottom: '2.5rem' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: '0.8rem', textTransform: 'uppercase', color: '#475569' }}>
-                  🏢 The 3 Regional Hubs (Where Drivers Start):
+              <div style={{ marginBottom: '2rem' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, marginBottom: '0.8rem', textTransform: 'uppercase', color: '#94a3b8' }}>
+                  Fulfillment Warehouses:
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem' }}>
                   {hubs.map((hub, idx) => {
                     const assignedDrivers = drivers.filter(d => d.hubId === hub.id);
                     const colorStrip = idx === 0 ? '#6366f1' : (idx === 1 ? '#06b6d4' : '#ec4899');
                     return (
-                      <div key={hub.id} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: '1.2rem', borderLeft: `6px solid ${colorStrip}` }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a' }}>{hub.name}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 3 }}>{hub.address} • Pincode: {hub.pincode}</div>
+                      <div key={hub.id} style={{ background: '#0d1527', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '1.2rem', borderLeft: `5px solid ${colorStrip}` }}>
+                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#ffffff' }}>{hub.name}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 3 }}>{hub.address} • {hub.pincode}</div>
                         <div style={{ marginTop: '0.85rem', display: 'flex', gap: 8, fontSize: '0.8rem' }}>
                           <span className="badge badge-light">ID: {hub.id}</span>
-                          <span className="badge badge-black">{assignedDrivers.length} Delivery Vehicles</span>
+                          <span className="badge badge-black">{assignedDrivers.length} Stationed Vehicles</span>
                         </div>
                       </div>
                     );
@@ -213,12 +164,9 @@ export default function App() {
 
               {/* Orders Grid */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, textTransform: 'uppercase', color: '#475569' }}>
-                  📦 Customer Packages Waiting to be Delivered ({orders.length} items):
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
+                  Pending Orders ({orders.length}):
                 </h3>
-                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                  Click "Next Step" below to see where each package gets assigned!
-                </span>
               </div>
 
               <div className="orders-table-grid">
@@ -228,18 +176,18 @@ export default function App() {
                     <div key={ord.id} className="order-box">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>{ord.customerName}</strong>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>Package ID: {ord.id}</div>
+                          <strong style={{ fontSize: '1rem', color: '#ffffff' }}>{ord.customerName}</strong>
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{ord.id}</div>
                         </div>
-                        <span style={{ background: '#0f172a', color: '#fff', padding: '3px 9px', borderRadius: 6, fontWeight: 800, fontSize: '0.82rem' }}>
+                        <span style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38bdf8', color: '#38bdf8', padding: '2px 8px', borderRadius: 4, fontWeight: 800, fontSize: '0.8rem' }}>
                           {ord.weight} kg
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.88rem', color: '#1e293b', background: '#ffffff', padding: '0.45rem 0.65rem', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                        <MapPin size={15} color="#2563eb" /> <span><strong>Destination:</strong> {dest?.name} ({dest?.id})</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.86rem', color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', padding: '0.45rem 0.65rem', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <MapPin size={15} color="#38bdf8" /> <span><strong>Destination:</strong> {dest?.name}</span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                        Area Pincode: {dest?.pincode} • Box Size: {ord.dimensions}
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                        Pincode: {dest?.pincode} • Dimensions: {ord.dimensions}
                       </div>
                     </div>
                   );
@@ -247,107 +195,65 @@ export default function App() {
               </div>
 
               {/* Add Order form */}
-              <div style={{ marginTop: '2.5rem', padding: '1.5rem', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.6rem' }}>
-                  <Plus size={18} color="#2563eb" />
-                  <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Try adding a custom order:</h3>
-                </div>
-                <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
-                  Add a package for any area in Bangalore. The routing engine will instantly recalculate the optimal hub and vehicle route!
-                </p>
+              <div style={{ marginTop: '2rem', padding: '1.25rem', background: '#0d1527', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12 }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: '0.75rem', color: '#ffffff' }}>
+                  + Add Package to Dispatch Queue
+                </h3>
                 <form onSubmit={handleAddOrder} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <input
                     type="text"
-                    placeholder="Customer Name (e.g. Rahul Sharma)"
+                    placeholder="Customer Name"
                     value={newCustName}
                     onChange={(e) => setNewCustName(e.target.value)}
-                    style={{ flex: 2, minWidth: 220, padding: '0.7rem 0.9rem', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: '0.9rem' }}
+                    style={{ flex: 2, minWidth: 200, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
                   />
                   <input
                     type="number"
                     step="0.5"
-                    placeholder="Weight in kg (e.g. 15)"
+                    placeholder="Weight (kg)"
                     value={newWeight}
                     onChange={(e) => setNewWeight(e.target.value)}
-                    style={{ flex: 1, minWidth: 140, padding: '0.7rem 0.9rem', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: '0.9rem' }}
+                    style={{ flex: 1, minWidth: 120, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
                   />
                   <select
                     value={newDestId}
                     onChange={(e) => setNewDestId(e.target.value)}
-                    style={{ flex: 2, minWidth: 230, padding: '0.7rem 0.9rem', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: '0.9rem', background: '#fff' }}
+                    style={{ flex: 2, minWidth: 220, padding: '0.65rem 0.85rem', background: '#070c18', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', borderRadius: 8, fontSize: '0.9rem' }}
                   >
                     {zones.map(z => (
                       <option key={z.id} value={z.id}>{z.name} ({z.id})</option>
                     ))}
                   </select>
                   <button type="submit" className="btn-primary">
-                    <Plus size={16} /> Add to Dispatch List
+                    <Plus size={16} /> Add Package
                   </button>
                 </form>
               </div>
             </div>
           )}
 
-          {/* ================= STEP 2: NEAREST HUB ALLOCATION (ARGON AI + GAME) ================= */}
+          {/* ================= STEP 2: DIRECTED GRAPH VECTOR ROUTING ================= */}
           {currentStep === 2 && (
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 2: Assigning Packages to Closest Warehouse (Argon AI)</h2>
+                  <h2 className="step-heading">Directed Weighted Graph Routing (A* & Dijkstra)</h2>
                   <p className="step-subheading">
-                    Run the <strong>Argon AI Neural Solver</strong> to auto-allocate packages using Dijkstra shortest paths, or play the <strong>Dispatcher Challenge</strong> game to test your instincts against the algorithm!
+                    The algorithm calculates the exact minimum-weight road path from fulfillment hubs to customer drop-off points.
                   </p>
                 </div>
                 <button className="btn-primary" onClick={handleRecalculate}>
-                  <Play size={14} fill="currentColor" /> Recalculate
+                  <RotateCcw size={15} /> Recalculate Graph
                 </button>
               </div>
 
-              {/* Explainer Banner */}
-              <div className="explainer-banner">
-                <HelpCircle size={20} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <div className="explainer-banner-title">Why Nearest-Hub Partitioning is Critical:</div>
-                  <div className="explainer-banner-text">
-                    Dispatching a Whitefield customer from an Electronic City hub would waste hours in traffic. By partitioning packages via <strong>Argon AI's Dijkstra graph matrix</strong>, our Bangalore fleet saves up to 45% in delivery duration.
-                  </div>
-                </div>
-              </div>
-
-              {/* Step 2 Sub-Nav: Directed Graph Vector Visualizer vs Argon AI Game */}
-              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <button
-                  className={`btn-secondary ${step2View === 'graph' ? 'active' : ''}`}
-                  onClick={() => setStep2View('graph')}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.2rem', fontSize: '0.88rem' }}
-                >
-                  <Compass size={16} /> 🧭 Directed Weighted Graph Visualizer (A* & Dijkstra)
-                </button>
-                <button
-                  className={`btn-secondary ${step2View === 'argon' ? 'active' : ''}`}
-                  onClick={() => setStep2View('argon')}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.6rem 1.2rem', fontSize: '0.88rem' }}
-                >
-                  <Cpu size={16} /> ⚡ Argon AI Hub Partitioning & Game
-                </button>
-              </div>
-
-              {step2View === 'graph' ? (
-                <DirectedGraphVisualizer
-                  hubs={hubs}
-                  zones={zones}
-                  roads={roads}
-                  orders={orders}
-                />
-              ) : (
-                <HubAllocationGame
-                  hubs={hubs}
-                  zones={zones}
-                  roads={roads}
-                  orders={orders}
-                  onApplyAllocation={handleRecalculate}
-                />
-              )}
+              {/* Single dedicated, unified visualizer */}
+              <OptimalPathFinder
+                hubs={hubs}
+                zones={zones}
+                roads={roads}
+                orders={orders}
+              />
             </div>
           )}
 
@@ -356,9 +262,9 @@ export default function App() {
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 3: Live Animated Delivery Route Visualizer</h2>
+                  <h2 className="step-heading">Multi-Vehicle Delivery Fleet Simulation</h2>
                   <p className="step-subheading">
-                    Hit <strong>"Simulate Delivery"</strong> to see all vehicles leave their hubs and deliver along their optimal turn-by-turn routes! Click any vehicle or route to see its detailed sequence.
+                    Simulate Bangalore delivery vehicles executing optimized turn-by-turn routes departing and returning to regional hubs.
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -382,20 +288,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Explainer Banner */}
-              <div className="explainer-banner">
-                <Zap size={20} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <div className="explainer-banner-title">How the visualizer works:</div>
-                  <div className="explainer-banner-text">
-                    • <strong>Green Play Button:</strong> Animates the electric delivery vans and bikes along their real road routes.<br />
-                    • <strong>Slider Bar:</strong> Scrub backwards and forwards in time to inspect any delivery.<br />
-                    • <strong>Speed Buttons:</strong> 1x, 2x, or 4x fast-forward.<br />
-                    • <strong>Algorithm Steps:</strong> Click "⚡ Algorithm Steps & Tour" in the top bar for a guided walkthrough of Dijkstra and TSP!
-                  </div>
-                </div>
-              </div>
-
               {/* Map View */}
               <InteractiveMap
                 hubs={hubs}
@@ -412,29 +304,15 @@ export default function App() {
             <div>
               <div className="step-header-banner">
                 <div>
-                  <h2 className="step-heading">Step 4: Final Driver Dispatch Schedules & Itineraries</h2>
+                  <h2 className="step-heading">Fleet Capacity Constraints & Dispatch Schedules</h2>
                   <p className="step-subheading">
-                    Each driver has strict weight capacities (25kg - 60kg). The engine packs packages into vehicles without overloading them and gives every driver an exact sequence of stops.
+                    Vehicle payload limits (25kg - 60kg) and turn-by-turn waypoint itineraries sequenced by Traveling Salesman (TSP).
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  <button className="btn-secondary" onClick={() => setCurrentStep(3)}>
-                    🗺️ Back to Live Animation
-                  </button>
                   <span className="badge badge-black" style={{ padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
                     Total Fleet Driving Time: {dispatchResult.totalFleetDurationMins.toFixed(0)} mins
                   </span>
-                </div>
-              </div>
-
-              {/* Explainer Banner */}
-              <div className="explainer-banner">
-                <Scale size={20} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <div className="explainer-banner-title">Capacitated Vehicle Routing (CVRP):</div>
-                  <div className="explainer-banner-text">
-                    Notice how each driver's cargo capacity bar stays safely below 100%. Deliveries are ordered using a <strong>Nearest-Neighbor Traveling Salesman heuristic</strong> so drivers minimize backtrack time.
-                  </div>
                 </div>
               </div>
 
@@ -447,31 +325,31 @@ export default function App() {
 
                   return (
                     <div key={hub.id}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1.2rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.6rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1.2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.6rem' }}>
                         <Building2 size={22} color={colorStrip} />
-                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>{hub.name} ({hub.id})</h3>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff' }}>{hub.name} ({hub.id})</h3>
                         <span className="badge badge-light" style={{ marginLeft: 'auto', fontWeight: 700 }}>
-                          {hp.routes.length} Active Vehicles • {hp.hubDurationMins.toFixed(0)} mins driving
+                          {hp.routes.length} Active Vehicles • {hp.hubDurationMins.toFixed(0)} mins
                         </span>
                       </div>
 
                       <div className="drivers-grid">
-                        {hp.routes.map((route, rIdx) => {
+                        {hp.routes.map((route) => {
                           const driver = route.driver;
                           const percentUsed = ((driver.currentLoad / driver.maxCapacity) * 100).toFixed(1);
 
                           return (
-                            <div key={driver.id} className="driver-detail-card" style={{ borderLeft: `6px solid ${colorStrip}` }}>
+                            <div key={driver.id} className="driver-detail-card" style={{ borderLeft: `5px solid ${colorStrip}` }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>
+                                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
                                     {driver.name}
                                   </div>
-                                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 2 }}>
-                                    Vehicle: <strong>{driver.vehicle}</strong> (ID: {driver.id})
+                                  <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 2 }}>
+                                    Vehicle: <strong>{driver.vehicle}</strong> ({driver.id})
                                   </div>
                                 </div>
-                                <span className="badge badge-light" style={{ fontWeight: 800, color: '#0f172a' }}>
+                                <span className="badge badge-black" style={{ fontWeight: 800, color: '#38bdf8' }}>
                                   ⏱️ {route.totalDurationMins.toFixed(0)} mins
                                 </span>
                               </div>
@@ -479,20 +357,20 @@ export default function App() {
                               {/* Capacity Bar */}
                               <div style={{ margin: '1rem 0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 5 }}>
-                                  <span style={{ color: '#64748b', fontWeight: 600 }}>Cargo Load Capacity:</span>
-                                  <strong style={{ color: driver.currentLoad > driver.maxCapacity ? '#ef4444' : '#0f172a' }}>
+                                  <span style={{ color: '#94a3b8' }}>Capacity Utilized:</span>
+                                  <strong style={{ color: '#ffffff' }}>
                                     {driver.currentLoad.toFixed(1)} / {driver.maxCapacity.toFixed(1)} kg ({percentUsed}%)
                                   </strong>
                                 </div>
-                                <div style={{ height: 10, background: '#e2e8f0', borderRadius: 5, overflow: 'hidden' }}>
-                                  <div style={{ width: `${Math.min(100, percentUsed)}%`, height: '100%', background: colorStrip, borderRadius: 5 }} />
+                                <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ width: `${Math.min(100, percentUsed)}%`, height: '100%', background: colorStrip, borderRadius: 4 }} />
                                 </div>
                               </div>
 
                               {/* Drop off sequence */}
-                              <div style={{ marginTop: '1.1rem' }}>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: '#0f172a', marginBottom: '0.5rem' }}>
-                                  Stop-by-Stop Order:
+                              <div style={{ marginTop: '1rem' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                                  Optimized Stop Order:
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                                   {route.stopSequence.map((pkg, sIdx) => {
@@ -501,18 +379,18 @@ export default function App() {
                                       <div
                                         key={pkg.id}
                                         style={{
-                                          background: '#f8fafc',
-                                          border: '1px solid #e2e8f0',
+                                          background: 'rgba(255,255,255,0.03)',
+                                          border: '1px solid rgba(255,255,255,0.06)',
                                           padding: '0.55rem 0.8rem',
                                           borderRadius: 8,
                                           fontSize: '0.82rem'
                                         }}
                                       >
                                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                          <strong style={{ color: '#0f172a' }}>Stop {sIdx + 1}: {dest?.name}</strong>
-                                          <span style={{ fontWeight: 800, color: '#475569' }}>{pkg.weight} kg</span>
+                                          <strong style={{ color: '#ffffff' }}>Stop {sIdx + 1}: {dest?.name}</strong>
+                                          <span style={{ fontWeight: 800, color: '#38bdf8' }}>{pkg.weight} kg</span>
                                         </div>
-                                        <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: 2 }}>
+                                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginTop: 2 }}>
                                           Customer: {pkg.customerName} ({pkg.id})
                                         </div>
                                       </div>
@@ -522,11 +400,11 @@ export default function App() {
                               </div>
 
                               {/* Waypoint Directions */}
-                              <div style={{ marginTop: '1.1rem', paddingTop: '0.75rem', borderTop: '1px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
-                                  GPS Road Turns:
+                              <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
+                                  Turn-by-Turn Waypoints:
                                 </div>
-                                <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0f172a', wordBreak: 'break-word', background: '#f1f5f9', padding: '0.5rem 0.75rem', borderRadius: 6 }}>
+                                <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#38bdf8', wordBreak: 'break-word', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: 6 }}>
                                   {route.waypoints.join(' ➔ ')}
                                 </div>
                               </div>
@@ -549,11 +427,11 @@ export default function App() {
               disabled={currentStep === 1}
               style={{ opacity: currentStep === 1 ? 0.4 : 1, cursor: currentStep === 1 ? 'not-allowed' : 'pointer' }}
             >
-              <ArrowLeft size={16} /> Previous Step
+              <ArrowLeft size={16} /> Previous
             </button>
 
-            <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#475569' }}>
-              Step {currentStep} of 4
+            <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#94a3b8' }}>
+              Phase {currentStep} of 4
             </span>
 
             <button
@@ -562,7 +440,7 @@ export default function App() {
               disabled={currentStep === 4}
               style={{ opacity: currentStep === 4 ? 0.4 : 1, cursor: currentStep === 4 ? 'not-allowed' : 'pointer' }}
             >
-              Next Step <ArrowRight size={16} />
+              Next Phase <ArrowRight size={16} />
             </button>
           </div>
 
