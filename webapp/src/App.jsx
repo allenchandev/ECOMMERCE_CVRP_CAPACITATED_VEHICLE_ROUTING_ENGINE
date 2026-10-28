@@ -31,7 +31,10 @@ import {
   Check,
   Maximize2,
   Minimize2,
-  Navigation
+  Navigation,
+  LogOut,
+  ShieldCheck,
+  ShoppingBag
 } from 'lucide-react';
 import {
   INITIAL_HUBS,
@@ -43,19 +46,21 @@ import {
   aStarSearch,
   buildAdjacencyList
 } from './cvrpEngine';
+import LoginScreen from './components/LoginScreen';
+import CustomerPortal from './components/CustomerPortal';
 
 // Custom Pin Icon for Google Maps
 function createPin(title, color, isHub) {
   const html = `
-    <div style="display: inline-flex; align-items: center; gap: 4px; background: ${color}; color: #ffffff; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2px solid #ffffff; white-space: nowrap;">
+    <div style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: ${color}; color: #ffffff; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); border: 2px solid #ffffff; white-space: nowrap; pointer-events: auto;">
       ${isHub ? '🏢 ' : '📍 '}${title}
     </div>
   `;
   return L.divIcon({
     html,
     className: 'custom-map-pin',
-    iconSize: [110, 24],
-    iconAnchor: [55, 12]
+    iconSize: null, // Let HTML define width/height naturally
+    iconAnchor: [0, 0] // Centered via CSS transform
   });
 }
 
@@ -81,11 +86,42 @@ function MapRecenter({ routeLatLngs, originLoc }) {
 }
 
 export default function App() {
+  // Current user authentication: persist across reloads
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cvrp_logged_in_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
   const [hubs, setHubs] = useState(INITIAL_HUBS);
   const [zones] = useState(INITIAL_ZONES);
   const [roads, setRoads] = useState(INITIAL_ROADS);
   const [drivers, setDrivers] = useState(INITIAL_DRIVERS);
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cvrp_orders_data');
+      return saved ? JSON.parse(saved) : INITIAL_ORDERS;
+    } catch (e) {
+      return INITIAL_ORDERS;
+    }
+  });
+
+  // Sync orders with localStorage whenever orders change
+  useEffect(() => {
+    try {
+      localStorage.setItem('cvrp_orders_data', JSON.stringify(orders));
+    } catch (e) {}
+  }, [orders]);
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('cvrp_logged_in_user');
+    } catch (e) {}
+    setCurrentUser(null);
+  };
 
   // Active selected order
   const [selectedOrderId, setSelectedOrderId] = useState('ORD-904');
@@ -328,20 +364,34 @@ export default function App() {
     }, 6000);
   };
 
-  const handleAddOrder = (e) => {
-    e.preventDefault();
-    if (!newCustName || !newWeight) return;
+  const handleAddCustomerOrder = (orderData) => {
     const newId = `ORD-${Math.floor(100 + Math.random() * 900)}`;
     const newOrder = {
       id: newId,
-      destinationId: newDestId,
-      weight: parseFloat(newWeight),
-      dimensions: newDimensions || '30x20x15 cm',
-      customerName: newCustName
+      destinationId: orderData.destinationId || 'ZONE-A',
+      weight: parseFloat(orderData.weight) || 5.0,
+      dimensions: orderData.dimensions || '30x20x15 cm',
+      customerName: orderData.customerName || 'Valued Customer',
+      phone: orderData.phone,
+      address: orderData.address,
+      packageType: orderData.packageType
     };
-    setOrders([...orders, newOrder]);
+    setOrders((prev) => [...prev, newOrder]);
     setSelectedOrderId(newId);
     setDriveProgress(0);
+    setIsDriving(false);
+    return newOrder;
+  };
+
+  const handleAddOrder = (e) => {
+    e.preventDefault();
+    if (!newCustName || !newWeight) return;
+    handleAddCustomerOrder({
+      customerName: newCustName,
+      weight: newWeight,
+      dimensions: newDimensions,
+      destinationId: newDestId
+    });
     setNewCustName('');
     setNewWeight('');
   };
@@ -397,6 +447,33 @@ export default function App() {
     setIsDriving(false);
   };
 
+  // If no user is logged in, show Login Screen
+  if (!currentUser) {
+    return <LoginScreen onLogin={(user) => setCurrentUser(user)} />;
+  }
+
+  // If customer is logged in, show Customer Portal
+  if (currentUser.role === 'customer') {
+    return (
+      <CustomerPortal
+        user={currentUser}
+        orders={orders}
+        hubs={hubs}
+        zones={zones}
+        roads={roads}
+        dispatchResult={dispatchResult}
+        onAddOrder={handleAddCustomerOrder}
+        onLogout={handleLogout}
+        onSwitchToAdmin={() => {
+          const adminUser = { role: 'admin', name: 'Logistics Operations Dispatcher', email: 'admin@ecommerce-dispatch.com' };
+          try { localStorage.setItem('cvrp_logged_in_user', JSON.stringify(adminUser)); } catch (e) {}
+          setCurrentUser(adminUser);
+        }}
+      />
+    );
+  }
+
+  // If admin is logged in, render the full CVRP Admin Routing Dashboard
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       
@@ -404,19 +481,38 @@ export default function App() {
       <header className="app-header">
         <div className="brand-section">
           <div className="brand-icon">
-            <Building2 size={24} />
+            <Building2 size={20} />
           </div>
-          <div>
-            <h1 className="brand-title">Dynamic E-Commerce Order Fulfillment & Delivery Routing Engine</h1>
-            <div className="brand-subtitle">Multi-Hub Regional Network • Shortest-Path A* & Dijkstra with Fleet Capacity Optimization (CVRP)</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 className="brand-title">E-Commerce Routing Engine</h1>
+              <span style={{
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                border: '1px solid #bfdbfe',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                padding: '1px 7px',
+                borderRadius: 20,
+                display: 'inline-flex',
+                alignItems: 'center',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }}>
+                🛡️ ADMIN
+              </span>
+            </div>
+            <div className="brand-subtitle">
+              Logged in: <strong>{currentUser.name}</strong> • Multi-Hub A* CVRP
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
           <button
             className="btn-primary"
             onClick={() => handleGenerateRandomOrders(1)}
-            style={{ background: '#2563eb', borderColor: '#2563eb', fontSize: '0.82rem' }}
+            style={{ background: '#2563eb', borderColor: '#2563eb' }}
             title="Simulate incoming real-time customer order"
           >
             <Zap size={15} /> + Generate New Order
@@ -425,7 +521,7 @@ export default function App() {
           <button
             className="btn-primary"
             onClick={() => setShowAddHubModal(true)}
-            style={{ background: '#16a34a', borderColor: '#16a34a', fontSize: '0.82rem' }}
+            style={{ background: '#16a34a', borderColor: '#16a34a' }}
           >
             <Plus size={15} /> + Add Fulfillment Hub
           </button>
@@ -433,13 +529,44 @@ export default function App() {
           <button
             className="btn-primary"
             onClick={() => setShowExplanationModal(true)}
-            style={{ background: '#0f172a', borderColor: '#0f172a', fontSize: '0.82rem' }}
+            style={{ background: '#0f172a', borderColor: '#0f172a' }}
           >
             <FileText size={15} /> 💡 Project Pitch Guide
+          </button>
+
+          <button
+            className="btn-secondary"
+            onClick={() => setCurrentUser({ role: 'customer', name: 'Alice Munro', email: 'alice.munro@gmail.com' })}
+            title="Switch to Customer Order View"
+          >
+            <ShoppingBag size={14} color="#059669" /> Customer View
           </button>
           
           <button className="btn-secondary" onClick={handleReset}>
             <RotateCcw size={14} /> Reset Defaults
+          </button>
+
+          <button
+            onClick={handleLogout}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              height: 34,
+              background: '#fee2e2',
+              color: '#991b1b',
+              border: '1px solid #fecaca',
+              borderRadius: 6,
+              padding: '0 0.85rem',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+            title="Log out from session"
+          >
+            <LogOut size={14} /> Logout
           </button>
         </div>
       </header>
