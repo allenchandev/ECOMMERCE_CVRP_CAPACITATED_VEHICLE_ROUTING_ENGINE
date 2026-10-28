@@ -39,41 +39,52 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.85rem 1.75rem;
+  padding: 0.55rem 1rem;
   background: #ffffff;
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  gap: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .brand-section {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.65rem;
+  flex-shrink: 0;
 }
 
 .brand-icon {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
   background: linear-gradient(135deg, #1a73e8 0%, #2563eb 100%);
   color: #ffffff;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.25);
 }
 
 .brand-title {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 800;
   color: #0f172a;
   letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .brand-subtitle {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: #64748b;
   font-weight: 500;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Hackathon Scenario Banner */
@@ -245,6 +256,18 @@ body {
   box-shadow: 0 2px 8px rgba(26, 115, 232, 0.12);
 }
 
+/* Leaflet Custom Map Pin centering */
+.custom-map-pin {
+  background: transparent !important;
+  border: none !important;
+  transform: translate(-50%, -50%);
+  width: auto !important;
+  height: auto !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Right Map Canvas */
 .map-canvas-wrapper {
   position: relative;
@@ -270,11 +293,13 @@ body {
   color: #ffffff;
   border: 1px solid #1a73e8;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
-  font-size: 0.84rem;
+  padding: 0.45rem 0.85rem;
+  height: 34px;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .btn-primary:hover {
@@ -291,10 +316,12 @@ body {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 0.45rem 0.85rem;
+  height: 34px;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 
 .btn-secondary:hover {
